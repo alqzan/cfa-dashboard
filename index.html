@@ -740,6 +740,7 @@ button,.tab,.tile,.t-head,.r-del,.r-nbtn{touch-action:manipulation}
     <button id="importBtn">استيراد (استبدال)</button>
     <button id="mergeBtn">استيراد ودمج</button>
     <input type="file" id="mergeFile" accept="application/json" hidden>
+    <button id="backupsBtn">نسخ أسبوعية محفوظة</button>
     <button id="syncBtn" hidden>ربط ملف مزامنة</button>
     <span class="sync-state" id="syncState"></span>
     <input type="file" id="importFile" accept="application/json" hidden>
@@ -755,7 +756,7 @@ button,.tab,.tile,.t-head,.r-del,.r-nbtn{touch-action:manipulation}
       <li>خطة اليوم على كيفك: × تستبعد أي جلسة مقترحة لليوم، و«+ أضف جلسة على كيفك» تختار بها القراءة والمدة بنفسك — والباقي يُبنى تلقائياً حول اختياراتك.</li>
       <li>سجّل أسئلة التدريب واختباراتك التجريبية في قسم «الأداء» — الدقة تكشف نقاط ضعفك الحقيقية، لا شعورك.</li>
       <li>زر «راجعت ✓» على المراجعات المستحقة يعيد جدولتها تلقائياً (7 ← 21 ← 45 ← 90 يوم).</li>
-      <li>صدّر نسخة احتياطية JSON مرة كل أسبوع؛ وتقدر تنقلها بين أجهزتك عبر «استيراد» عند الحاجة.</li>
+      <li>صدّر نسخة احتياطية JSON مرة كل أسبوع؛ وتقدر تنقلها بين أجهزتك عبر «استيراد» عند الحاجة. اللوحة أيضاً تاخذ لقطة تلقائية كل أسبوع داخل المتصفح — راجعها أو استعدها من «نسخ أسبوعية محفوظة».</li>
       <li>شريط البحث فوق المواضيع يوصلك لأي قراءة فوراً، وزر «تقرير الأسبوع» في قسم الأداء ينسخ ملخصاً جاهزاً للمشاركة أو الأرشفة.</li>
       <li><b>⌘K</b> يفتح لوحة الأوامر: اكتب اسم أي قراءة أو موضوع للقفز إليه، أو <b>⇧⏎</b> لبدء جلسة عليه مباشرة. <b>/</b> للبحث، <b>T</b> لتشغيل/إيقاف المؤقّت، <b>؟</b> لهذا الدليل.</li>
       <li>«محاكاة الوتيرة» تجيب على سؤال واحد: كم تتغيّر جاهزيتك يوم الاختبار لو ذاكرت ساعة أكثر أو أقل يومياً — قبل ما تلتزم بالساعة.</li>
@@ -769,6 +770,14 @@ button,.tab,.tile,.t-head,.r-del,.r-nbtn{touch-action:manipulation}
 
 </div>
 <div class="cfw" id="cfw" aria-hidden="true"></div>
+<div class="cmdk" id="backupModal">
+  <div class="cmdk-box">
+    <div style="padding:14px 17px;border-bottom:1px solid var(--line);font-size:13.5px;color:var(--dim)">
+      لقطة تلقائية كل أسبوع من بياناتك — محفوظة داخل هذا المتصفح فقط. استعادة نسخة تستبدل تقدّمك الحالي.
+    </div>
+    <div class="cmdk-list" id="backupList"></div>
+  </div>
+</div>
 <div class="cmdk" id="cmdk">
   <div class="cmdk-box">
     <input id="cmdkIn" type="text" placeholder="اقفز لأي قراءة أو موضوع، أو نفّذ أمراً…" autocomplete="off">
@@ -807,6 +816,26 @@ const store = {
     return ok;
   }
 };
+
+/* ---------- weekly local snapshots (independent of the live save, kept for restore) ---------- */
+const BACKUP_KEY = "cfa_l2_dash_v1_backups";
+const BACKUP_INTERVAL_MS = 7*24*3600*1000;
+const BACKUP_MAX = 8;
+function loadBackups(){
+  try{ const raw = localStorage.getItem(BACKUP_KEY); if(raw) return JSON.parse(raw); }catch(e){}
+  return [];
+}
+function saveBackups(list){
+  try{ localStorage.setItem(BACKUP_KEY, JSON.stringify(list)); }catch(e){}
+}
+function maybeAutoBackup(){
+  const list = loadBackups();
+  const last = list.length ? list[list.length-1].ts : 0;
+  if(Date.now()-last < BACKUP_INTERVAL_MS) return;
+  list.push({ ts: Date.now(), data: JSON.parse(JSON.stringify(S)) });
+  while(list.length > BACKUP_MAX) list.shift();
+  saveBackups(list);
+}
 
 /* ---------- default curriculum (2026, 45 modules) ----------
    weights are official ranges; mid-points sum to 100, used for weighting */
@@ -1899,6 +1928,34 @@ $("#importFile").onchange=e=>{
 };
 $("#resetBtn").onclick=()=>armConfirm($("#resetBtn"),()=>{ S=fresh(); save(); boot(); toast("أُعيد الضبط — بداية نظيفة"); });
 
+function fmtBackupDate(ts){
+  const d=new Date(ts);
+  const hh=String(d.getHours()).padStart(2,"0"), mm=String(d.getMinutes()).padStart(2,"0");
+  return fmtDate(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"))+" — "+hh+":"+mm;
+}
+function renderBackupList(){
+  const host=$("#backupList");
+  const list=loadBackups().slice().reverse();
+  if(!list.length){ host.innerHTML='<div class="cmdk-empty">ما فيه نسخ محفوظة بعد — أول نسخة تنحفظ تلقائياً بعد أسبوع من أول استخدام.</div>'; return; }
+  host.innerHTML = list.map((b,i)=>
+    '<div class="cmdk-i" data-i="'+i+'" style="cursor:default">'+
+      '<span class="lbl">'+esc(fmtBackupDate(b.ts))+'</span>'+
+      '<button type="button" class="restbtn" data-restore="'+i+'" style="flex-shrink:0">استعادة</button>'+
+    '</div>'
+  ).join("");
+  host.querySelectorAll("[data-restore]").forEach(btn=>{
+    btn.onclick=()=>armConfirm(btn,()=>{
+      const b=list[Number(btn.dataset.restore)]; if(!b) return;
+      S=migrate(JSON.parse(JSON.stringify(b.data)));
+      save(); boot();
+      $("#backupModal").classList.remove("on");
+      toast("استُعيدت نسخة "+fmtBackupDate(b.ts));
+    });
+  });
+}
+$("#backupsBtn").onclick=()=>{ renderBackupList(); $("#backupModal").classList.add("on"); };
+$("#backupModal").onclick=e=>{ if(e.target.id==="backupModal") $("#backupModal").classList.remove("on"); };
+
 $("#note").innerHTML = "اختصارات: <b>\u2318K</b> لوحة الأوامر · <b>/</b> بحث · <b>T</b> المؤقّت · <b>؟</b> الدليل. "+
   "أسماء المواضيع والقراءات بالإنجليزي وبساعات تقديرية حسب منهج 2026 — عدّل أي اسم أو رقم ساعات بالضغط عليه ليطابق مزوّدك. "+
   "«خطة اليوم» ترتّب أولوياتك تلقائياً (وزن عالٍ + ضعف أولاً)، والمراجعات المتباعدة (7/21/45/90 يوم) تحميك من نسيان ما أنهيته. "+
@@ -2431,6 +2488,7 @@ function boot(){ syncSettings(); renderAll(); renderTopics(); }
   let loaded=null;
   try{ loaded = await store.read(); }catch(e){}
   S = loaded ? migrate(loaded) : fresh();
+  maybeAutoBackup();
   /* a timer left running overnight would otherwise bill today for yesterday's session */
   let staleNote=null;
   if(S.activeTimer){
