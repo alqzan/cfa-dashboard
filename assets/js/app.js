@@ -1389,10 +1389,11 @@ function ensurePlanCfg(){
   if(!S.planCfg || S.planCfg.date!==tk) S.planCfg={date:tk, excl:[], added:[]};
   return S.planCfg;
 }
-function priorityOf(r,t){
+function priorityOf(r,t,hotReadingIds){
   const mf=({none:1.0,weak:1.4,mid:0.7,strong:0.3})[r.mastery] ?? 1.0;
   const sf=(r.status==="doing")?1.15:1.0;
-  return t.weight*mf*sf;
+  const wf=(hotReadingIds && hotReadingIds.has(r.id))?1.25:1.0; /* open errors or a live weakness on this reading */
+  return t.weight*mf*sf*wf;
 }
 function todaysPlan(){
   const cfg=ensurePlanCfg();
@@ -1405,8 +1406,11 @@ function todaysPlan(){
     blocks.push({type:"pick",t:f.t,r:f.r,min:a.min});
     budget=Math.max(0, budget-a.min);
   });
+  const hotReadingIds=new Set();
+  (S.errors||[]).forEach(e=>{ if(e.status==="open"||e.status==="reopened") hotReadingIds.add(e.readingId); });
+  try{ computeWeaknesses().slice(0,8).forEach(w=>{ if(w.readingId) hotReadingIds.add(w.readingId); }); }catch(e){}
   const cand=[];
-  S.topics.forEach(t=>t.r.forEach(r=>{ if(r.status!=="done" && cfg.excl.indexOf(r.id)===-1 && !cfg.added.some(a=>a.rid===r.id)) cand.push({t:t,r:r,p:priorityOf(r,t)}); }));
+  S.topics.forEach(t=>t.r.forEach(r=>{ if(r.status!=="done" && cfg.excl.indexOf(r.id)===-1 && !cfg.added.some(a=>a.rid===r.id)) cand.push({t:t,r:r,p:priorityOf(r,t,hotReadingIds)}); }));
   cand.sort((a,b)=>b.p-a.p);
   const blockMin=c=>{ const remHrs=effHrs(c.r)*(1-readingProgress(c.r));
     return Math.round(Math.min(budget, Math.min(55, Math.max(25, remHrs*60)))); };
@@ -2047,22 +2051,67 @@ function weeklyReport(){
   const ses7=S.sessions.filter(x=>x.d>=from).length;
   let qa=0,qc=0;
   for(const d in S.practice){ if(d>=from){ for(const id in S.practice[d]){ qa+=S.practice[d][id].a; qc+=S.practice[d][id].c; } } }
-  const T=totals(), R=Math.round(overallReadiness());
+  allReadingsFlat().forEach(({r})=>{ (r.readingPractice||[]).forEach(p=>{ if(p.date>=from){ qa+=p.total; qc+=p.correct; } }); });
+  const T=totals(), rb=readinessBreakdown(), R=Math.round(rb.total);
   const gaps=S.topics.map(t2=>({t:t2,h:topicHours(t2),m:topicMastery(t2)}))
     .filter(x=>x.t.weight>=10 && (x.h.frac<0.9 || x.m<1.5))
     .sort((a,b)=>(b.t.weight*(1-b.h.frac))-(a.t.weight*(1-a.h.frac))).slice(0,2)
     .map(x=>x.t.en||x.t.ar).join("، ");
   const ms=S.mocks.slice().sort((a,b)=> a.date<b.date?-1:1);
+  const openErrors=(S.errors||[]).filter(e=>e.status==="open"||e.status==="reopened");
+  const newErrors7=(S.errors||[]).filter(e=>e.date>=from).length;
+  let weaknesses=[]; try{ weaknesses=computeWeaknesses(); }catch(e){}
   const lines=[
     "تقرير أسبوع "+fmtDate(from)+" – "+fmtDate(todayKey()),
     "الساعات: "+fmt(hrs7)+" من هدف "+fmt(S.target*7)+" ("+ses7+" جلسة مؤقّت)",
-    "الأسئلة: "+qa.toLocaleString("en")+(qa?(" بدقة "+Math.round(qc/qa*100)+"٪"):""),
+    "الأسئلة: "+qa.toLocaleString("en")+(qa?(" بدقة "+Math.round(qc/qa*100)+"٪"):"")+" · أخطاء جديدة هذا الأسبوع: "+newErrors7,
     (ms.length?("آخر تجريبي: "+fmt(ms[ms.length-1].score)+"٪ ("+fmtDate(ms[ms.length-1].date)+")"):"لا اختبارات تجريبية بعد"),
-    "التقدّم الموزون: "+Math.round(T.pct)+"٪ · الجاهزية: "+R+"/100 · السلسلة: "+currentStreak()+" يوم",
+    "التقدّم الموزون: "+Math.round(T.pct)+"٪ · السلسلة: "+currentStreak()+" يوم",
+    "الجاهزية: "+R+"/100 — محتوى "+fmt(rb.content)+"/"+rb.weights.content+" · إتقان "+fmt(rb.mastery)+"/"+rb.weights.mastery+
+      " · أسئلة "+fmt(rb.qbank)+"/"+rb.weights.qbank+" · إغلاق أخطاء "+fmt(rb.errors)+"/"+rb.weights.errors+" · محاكيات "+fmt(rb.mocks)+"/"+rb.weights.mocks,
     "متانة ما أنهيته: "+Math.round(retentionOverall()*100)+"٪ · مراجعات مستحقة: "+dueReviews().length,
     "بوتيرة "+fmt(S.target)+" سا/يوم الجاهزية المتوقعة يوم الاختبار: "+Math.round(projectAt(S.target).total)+"/100",
-    (gaps?("أكبر الفجوات: "+gaps):"")
+    "أخطاء مفتوحة: "+openErrors.length+(weaknesses.length?(" · أهم نقاط الضعف: "+weaknesses.slice(0,3).map(w=>w.name).join("، ")):""),
+    (gaps?("أكبر فجوات المحتوى: "+gaps):"")
   ].filter(Boolean);
+  return lines.join("\n");
+}
+function buildCoachContext(){
+  const rb=readinessBreakdown();
+  let weaknesses=[]; try{ weaknesses=computeWeaknesses(); }catch(e){}
+  const openErrors=(S.errors||[]).filter(e=>e.status==="open"||e.status==="reopened").slice(0,8);
+  const active=(S.activeTimer && S.activeTimer.readingId)?findReading(S.activeTimer.readingId):null;
+  const recentReading=active || allReadingsFlat().filter(x=>x.r.status==="doing")[0] || null;
+  const lines=[
+    "# Coach Context — "+fmtDate(todayKey()),
+    "",
+    "## القراءة الحالية",
+    recentReading? readingLabel(recentReading.t,recentReading.r)+" — المرحلة: "+stageProgressLabel(recentReading.r) : "لا توجد قراءة نشطة الآن",
+    "",
+    "## الجاهزية (من 100)",
+    "الإجمالي: "+Math.round(rb.total)+" — محتوى "+fmt(rb.content)+"/"+rb.weights.content+"، إتقان "+fmt(rb.mastery)+"/"+rb.weights.mastery+
+      "، أسئلة "+fmt(rb.qbank)+"/"+rb.weights.qbank+"، إغلاق أخطاء "+fmt(rb.errors)+"/"+rb.weights.errors+"، محاكيات "+fmt(rb.mocks)+"/"+rb.weights.mocks,
+    "",
+    "## الأخطاء المفتوحة ("+openErrors.length+")",
+    openErrors.length? openErrors.map(e=>{ const f=findReading(e.readingId); return "- "+(e.los||(f?(f.r.en||f.r.ar):"—"))+" ("+(REASON_LABEL[e.reasonTag]||e.reasonTag)+")"; }).join("\n") : "لا شيء مفتوح حالياً",
+    "",
+    "## أهم نقاط الضعف",
+    weaknesses.length? weaknesses.slice(0,5).map(w=>"- "+w.name+" — خطورة "+w.severity+"/5 — "+w.action).join("\n") : "لا نقاط ضعف مكتشفة بعد",
+    "",
+    "## المصادر المكتملة مؤخراً",
+    allReadingsFlat().filter(x=>x.r.status==="done").slice(-5).map(x=>"- "+(x.r.en||x.r.ar)).join("\n") || "لا شيء بعد",
+    "",
+    "## آخر المراجعات المستحقة",
+    dueReviews().slice(0,5).map(f=>"- "+(f.r.en||f.r.ar)).join("\n") || "لا مراجعات مستحقة الآن",
+    "",
+    "## ما يحتاجه المستخدم الآن",
+    [
+      openErrors.length ? "إغلاق "+openErrors.length+" خطأ مفتوح قبل أي شيء آخر." : "",
+      (rb.content < rb.weights.content*0.3) ? "البدء بمراحل المحتوى الأساسية (المصدر الأول والملاحظات)." : "",
+      (rb.qbank < rb.weights.qbank*0.5) ? "زيادة حجم أسئلة CFAI على مستوى القراءة." : "",
+      (rb.mocks===0) ? "البدء بأول اختبار تجريبي." : ""
+    ].filter(Boolean).join(" ") || "الاستمرار على نفس الوتيرة — لا فجوة حرجة حالياً."
+  ];
   return lines.join("\n");
 }
 $("#repBtn").onclick=async ()=>{
@@ -2079,6 +2128,7 @@ $("#repBtn").onclick=async ()=>{
     }catch(e2){ toast("تعذّر النسخ في هذا المتصفح", true); }
   }
 };
+$("#coachCtxBtn").onclick=()=>copyToClipboard(buildCoachContext(),"نُسخ Coach Context كامل");
 
 
 /* =========================================================================
