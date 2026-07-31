@@ -1,5 +1,7 @@
 "use strict";
 
+const APP_VERSION = "6.0.0";
+
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ---------- */
 const KEY = "cfa_l2_dash_v1";
 let _mem = null;
@@ -2722,3 +2724,33 @@ function boot(){ syncSettings(); renderAll(); renderTopics(); }
   }
 })();
 document.addEventListener("visibilitychange",()=>{ if(document.hidden && S){ store.write(S); } });
+
+/* ---------- service worker: offline support without silent staleness ---------- */
+const verTag=$("#verTag"); if(verTag) verTag.textContent="v"+APP_VERSION;
+let swReg=null, swUpdateReady=false;
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("./sw.js").then(reg=>{
+    swReg=reg;
+    if(reg.waiting) markUpdateReady();
+    reg.addEventListener("updatefound", ()=>{
+      const nw=reg.installing; if(!nw) return;
+      nw.addEventListener("statechange", ()=>{ if(nw.state==="installed" && navigator.serviceWorker.controller) markUpdateReady(); });
+    });
+  }).catch(()=>{});
+  navigator.serviceWorker.addEventListener("controllerchange", ()=>{ if(swUpdateReady) window.location.reload(); });
+}
+function markUpdateReady(){
+  swUpdateReady=true;
+  const btn=$("#checkUpdateBtn"); if(btn) btn.textContent="تحديث متاح — اضغط للتحديث";
+  toast("يوجد تحديث جديد للوحة — بياناتك لن تُمسح");
+}
+const updateBtn=$("#checkUpdateBtn");
+if(updateBtn) updateBtn.onclick=async ()=>{
+  if(swUpdateReady && swReg && swReg.waiting){
+    swReg.waiting.postMessage({type:"SKIP_WAITING"});
+    return;
+  }
+  if(!swReg){ toast("لا يوجد Service Worker مسجَّل في هذا المتصفح"); return; }
+  try{ await swReg.update(); toast(swReg.waiting?"يوجد تحديث — اضغط مرة أخرى لتفعيله":"أنت على آخر إصدار بالفعل"); }
+  catch(e){ toast("تعذّر التحقق من التحديث", true); }
+};
