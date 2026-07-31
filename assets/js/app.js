@@ -257,13 +257,24 @@ function migrate(o){
     if(!o.deviceId) o.deviceId = "dev-"+Math.random().toString(36).slice(2)+Date.now().toString(36);
     if(!o.sync) o.sync = { provider:"local", uid:null, lastSyncAt:null, status:"local" };
     if(o.backupBeforeMigration===undefined) o.backupBeforeMigration = true;
+    if(!o.syncConflicts) o.syncConflicts = []; /* filled in by firebase-sync.js when both sides changed the same record */
+    if(o.lastLocalChangeAt===undefined) o.lastLocalChangeAt = Date.now();
   }
   return o;
 }
 let S = null;
+/* Bridge for assets/js/firebase-sync.js: it's a type=module script, which does NOT share this
+   classic script's top-level `let`/`const` scope, so these closures are the only way it can
+   read/replace S or trigger a save + re-render. window.CoachSync itself is optional — the app
+   runs fully offline/local if firebase-sync.js never finds a firebase-config.js to load. */
+window.getCoachState = () => S;
+window.setCoachState = (v) => { S = v; };
+window.coachSave = () => save();
+window.coachRenderAll = () => { boot(); };
 
 let saveT = null;
 function save(){
+  if(S) S.lastLocalChangeAt = Date.now();
   clearTimeout(saveT);
   saveT = setTimeout(async ()=>{ const ok = await store.write(S); if(ok) flashSaved(); syncPush(); }, 350);
 }
@@ -2593,6 +2604,78 @@ setInterval(()=>{
 })();
 
 /* ---------- boot ---------- */
+/* ---------- cloud sync (Firebase, optional) ---------- */
+const SYNC_STATUS_LABEL={
+  local:{text:"محلي فقط",color:"var(--faint)"}, syncing:{text:"جاري المزامنة",color:"var(--mid)"},
+  synced:{text:"تمت المزامنة",color:"var(--strong)"}, conflict:{text:"يوجد تعارض",color:"var(--bad)"},
+  offline:{text:"غير متصل",color:"var(--faint)"}, error:{text:"خطأ مزامنة",color:"var(--bad)"}
+};
+function initCloudPanel(retries){
+  retries = retries==null ? 20 : retries;
+  if(!window.CoachSync){
+    if(retries>0) setTimeout(()=>initCloudPanel(retries-1), 250);
+    return;
+  }
+  let mode="in"; /* in = sign in form, up = sign up form */
+  function render(st){
+    const sec=$("#cloudSec"), host=$("#cloudCard");
+    if(!host) return;
+    if(!st.available){ sec.hidden=true; return; }
+    sec.hidden=false;
+    if(!st.user){
+      host.innerHTML=
+        '<div class="cloud-auth">'+
+          '<div class="cloud-tabs">'+
+            '<button data-m="in" class="'+(mode==="in"?"on":"")+'">تسجيل الدخول</button>'+
+            '<button data-m="up" class="'+(mode==="up"?"on":"")+'">حساب جديد</button>'+
+          '</div>'+
+          '<input type="email" id="cloudEmail" placeholder="البريد الإلكتروني" autocomplete="email">'+
+          '<input type="password" id="cloudPw" placeholder="كلمة المرور" autocomplete="current-password">'+
+          '<button id="cloudAuthBtn" class="cloud-go">'+(mode==="in"?"تسجيل الدخول":"إنشاء حساب")+'</button>'+
+          '<div class="cloud-err" id="cloudErr"></div>'+
+        '</div>';
+      host.querySelectorAll(".cloud-tabs button").forEach(b=>b.onclick=()=>{ mode=b.dataset.m; render(st); });
+      host.querySelector("#cloudAuthBtn").onclick=async ()=>{
+        const email=$("#cloudEmail").value.trim(), pw=$("#cloudPw").value;
+        const errEl=$("#cloudErr"); errEl.textContent="";
+        if(!email||!pw){ errEl.textContent="أدخل البريد وكلمة المرور"; return; }
+        try{ mode==="in" ? await window.CoachSync.signIn(email,pw) : await window.CoachSync.signUp(email,pw); }
+        catch(e){ errEl.textContent=e && e.message ? e.message : "تعذّر تسجيل الدخول"; }
+      };
+      return;
+    }
+    const lab=SYNC_STATUS_LABEL[st.status]||SYNC_STATUS_LABEL.local;
+    if(st.firstLinkPending){
+      host.innerHTML=
+        '<div class="cloud-signedin">مسجّل الدخول: <b>'+esc(st.user.email)+'</b></div>'+
+        '<div class="cloud-firstlink">'+
+          '<p>وجدنا بيانات محفوظة على هذا الحساب من جهاز آخر، تختلف عمّا لديك هنا. اختر كيف تريد المتابعة:</p>'+
+          '<div class="cloud-firstlink-actions">'+
+            '<button id="cloudUseLocal">استخدام البيانات المحلية</button>'+
+            '<button id="cloudUseCloud">استخدام بيانات السحابة</button>'+
+            '<button id="cloudMergeBoth" class="primary">دمج النسختين</button>'+
+          '</div>'+
+        '</div>';
+      $("#cloudUseLocal").onclick=()=>window.CoachSync.useLocalData();
+      $("#cloudUseCloud").onclick=()=>window.CoachSync.useCloudData();
+      $("#cloudMergeBoth").onclick=()=>window.CoachSync.mergeBothData();
+      return;
+    }
+    host.innerHTML=
+      '<div class="cloud-signedin">مسجّل الدخول: <b>'+esc(st.user.email)+'</b><button class="cloud-signout" id="cloudSignOut">تسجيل الخروج</button></div>'+
+      '<div class="cloud-status">'+
+        '<span class="cloud-chip" style="color:'+lab.color+';border-color:'+lab.color+'">'+lab.text+'</span>'+
+        '<span class="cloud-last">'+(st.lastSyncAt? ("آخر مزامنة: "+fmtDate(st.lastSyncAt)+" "+new Date(st.lastSyncAt).toLocaleTimeString("ar")) : "لم تتم أي مزامنة بعد")+'</span>'+
+        '<button id="cloudSyncNow" class="cloud-go">مزامنة الآن</button>'+
+      '</div>'+
+      (st.conflicts && st.conflicts.length ? '<div class="cloud-conflicts">'+st.conflicts.length+' سجل تعارض فيه التعديل على جهازين — تم الاحتفاظ بالنسختين داخل الحقل نفسه، راجعها يدوياً.</div>' : '');
+    $("#cloudSignOut").onclick=()=>window.CoachSync.signOut();
+    $("#cloudSyncNow").onclick=()=>window.CoachSync.syncNow();
+  }
+  window.CoachSync.onChange(render);
+  render(window.CoachSync.getStatus());
+}
+
 function boot(){ syncSettings(); renderAll(); renderTopics(); }
 (async function init(){
   let loaded=null;
@@ -2629,6 +2712,7 @@ function boot(){ syncSettings(); renderAll(); renderTopics(); }
   }
   boot();
   initSync();
+  initCloudPanel();
   if(staleNote) setTimeout(()=>toast(staleNote, true), 600);
   const persisted=await store.write(S);
   if(!persisted){

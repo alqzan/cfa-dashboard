@@ -212,6 +212,14 @@
     <button class="danger" id="resetBtn">إعادة الضبط</button>
   </div>
 
+  <section class="sec" id="cloudSec" hidden>
+    <div class="sec-head">
+      <h2>مزامنة السحابة (Firebase)</h2>
+      <p>محلي أولاً دائماً — السحابة نسخة إضافية بين أجهزتك، لا تستبدل التخزين المحلي.</p>
+    </div>
+    <div class="card cloud-card" id="cloudCard"></div>
+  </section>
+
   <details class="guide">
     <summary>دليل سريع — كيف تستفيد من اللوحة</summary>
     <ul>
@@ -258,5 +266,6 @@
 
 <script src="assets/js/readiness.js?v=6.0.0" defer></script>
 <script src="assets/js/app.js?v=6.0.0" defer></script>
+<script type="module" src="assets/js/firebase-sync.js?v=6.0.0"></script>
 </body>
 </html>
