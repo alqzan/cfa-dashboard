@@ -1,0 +1,9 @@
+{
+  "name": "cfa-dashboard",
+  "private": true,
+  "description": "CFA Level II Personal Coach dashboard (static, GitHub Pages)",
+  "scripts": {
+    "test": "for f in tests/*.test.mjs; do node \"$f\" || exit 1; done"
+  },
+  "license": "UNLICENSED"
+}
