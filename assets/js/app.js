@@ -137,6 +137,7 @@ function defaultStages(){
 }
 function defaultBrief(){
   return {
+    primarySource:"", confidence:null, difficultParts:"", previousResult:"",
     markIdeas:"", schweserTips:"", profNotes:"", formulas:"", understand:"",
     memorize:"", confusions:"", cfaiTraps:"", prepnuggetsGaps:"", checklist:"", chatReply:""
   };
@@ -220,6 +221,7 @@ function migrate(o){
         if(r.sourceMap===undefined) r.sourceMap = defaultSourceMap();
         if(r.pages===undefined) r.pages = {mark:"",schweser:"",cfai:"",secretSauce:""};
         if(r.brief===undefined) r.brief = defaultBrief();
+        else r.brief = Object.assign(defaultBrief(), r.brief); /* backfill any brief fields added after your first v6 run */
         if(r.readingPractice===undefined) r.readingPractice = []; /* Reading-level question-bank entries */
         if(r.closeout===undefined) r.closeout = {status:"open", closedAt:null}; /* open|ready|closed */
       });
@@ -394,6 +396,20 @@ function toast(msg, bad){
   p.classList.add("show");
   clearTimeout(toast._t);
   toast._t=setTimeout(()=>{ p.classList.remove("show"); p.dataset.busy=""; },2000);
+}
+/* shared clipboard helper for every "نسخ ... إلى ChatGPT" button across the app */
+async function copyToClipboard(text, okMsg){
+  try{ await navigator.clipboard.writeText(text); toast(okMsg||"نُسخ للحافظة"); return true; }
+  catch(err){
+    try{
+      const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.select();
+      const copied=document.execCommand("copy");
+      document.body.removeChild(ta);
+      if(!copied) throw new Error("copy failed");
+      toast(okMsg||"نُسخ للحافظة"); return true;
+    }catch(e2){ toast("تعذّر النسخ", true); return false; }
+  }
 }
 function armConfirm(btn, fn){
   if(btn.dataset.arm==="1"){
@@ -669,24 +685,240 @@ function renderTopics(){
   updateCounts();
   syncExpandLabel();
 }
+/* ---------- reading stages / source map / pre-question brief ---------- */
+const STAGE_DEFS=[
+  ["sourceWatched","شاهدت شرح المصدر الأساسي"],
+  ["markNotes","راجعت ملاحظات Mark"],
+  ["examFocus","راجعت Exam Focus وProfessor's Notes من Schweser"],
+  ["formulas","راجعت المعادلات الأساسية"],
+  ["preQuestionBrief","قرأت Pre-Question Brief"],
+  ["cfaiQuestions","حللت أسئلة CFAI"],
+  ["errorReview","راجعت الأسئلة الخاطئة والمتعثرة"],
+  ["closeoutQuiz","اجتزت Reading Closeout Quiz"],
+  ["examReady","جاهزة للمراجعة النهائية"]
+];
+const CONTENT_STAGE_KEYS=["sourceWatched","markNotes","examFocus","formulas","preQuestionBrief"];
+function contentCompleted(r){ return CONTENT_STAGE_KEYS.every(k=>r.stages && r.stages[k]); }
+function stagesExamReady(r){ return STAGE_DEFS.every(([k])=>r.stages && r.stages[k]); }
+function stageProgressLabel(r){
+  if(stagesExamReady(r)) return "جاهزة للمراجعة النهائية";
+  if(contentCompleted(r)) return "المحتوى مكتمل — بانتظار الأسئلة";
+  if(r.status==="todo") return "لم تبدأ بعد";
+  return "قيد المذاكرة";
+}
+function readingLabel(t,r){ return (r.readingNo? ("Reading "+r.readingNo+" — "):"")+(r.en||r.ar); }
+const SRC_LABELS={
+  prepnuggets:{none:"لم أبدأ",partial:"جزئي",done:"مكتمل"},
+  markVideo:{none:"لم أشاهده",partial:"شاهدت أجزاء محددة",done:"مكتمل"},
+  markNotes:{none:"لم أراجع",done:"تمت المراجعة"},
+  markFormula:{na:"غير مطلوب",done:"تمت المراجعة"}
+};
+function summarizeSourceMap(r){
+  const sm=r.sourceMap;
+  const parts=["PrepNuggets: "+SRC_LABELS.prepnuggets[sm.prepnuggets],"Mark Video: "+SRC_LABELS.markVideo[sm.markVideo]];
+  if(sm.schweser.examFocus||sm.schweser.profNotes) parts.push("Schweser: "+[sm.schweser.examFocus&&"Exam Focus",sm.schweser.profNotes&&"Professor's Notes"].filter(Boolean).join("/"));
+  parts.push("CFAI Practice: "+(sm.cfai.practice?"تم":"لم يتم"));
+  return parts.join("، ");
+}
+function buildBriefPrompt(t,r){
+  const b=r.brief;
+  const doneSources=[];
+  if(r.sourceMap.prepnuggets==="done") doneSources.push("PrepNuggets");
+  if(r.sourceMap.markVideo==="done") doneSources.push("Mark Video");
+  if(r.sourceMap.markNotes==="done") doneSources.push("Mark Notes");
+  if(r.sourceMap.schweser.examFocus) doneSources.push("Schweser Exam Focus");
+  if(r.sourceMap.schweser.profNotes) doneSources.push("Schweser Professor's Notes");
+  if(r.sourceMap.cfai.curriculum) doneSources.push("CFAI Curriculum");
+  const acc=topicAcc(t.id);
+  return [
+    "اسم المادة: "+(t.en||t.ar),
+    "انتهيت من "+readingLabel(t,r)+".",
+    "المرحلة الحالية: "+stageProgressLabel(r)+".",
+    "المصادر التي أنهيتها: "+(doneSources.length?doneSources.join("، "):"لا شيء بعد"),
+    "المصدر الأساسي الذي استخدمته: "+(b.primarySource||"—"),
+    "مستوى ثقتي: "+(b.confidence!=null&&b.confidence!==""?b.confidence:"—")+" من 5.",
+    "الأجزاء التي شعرت أنها صعبة: "+(b.difficultParts||"—"),
+    "نتيجتي السابقة إن وجدت: "+(b.previousResult||(acc?Math.round(acc.acc)+"٪ على "+acc.a+" سؤال في هذا الموضوع":"—")),
+    "",
+    "ارجع إلى مصادر Mark Meldrum 2026 وSchweser وCFA Core 2026 التي رفعتها لك، وأعطني Pre-Question Brief يتضمن أهم الملاحظات والمعادلات والفخاخ والأخطاء الشائعة قبل أن أبدأ CFAI Practice Questions."
+  ].join("\n");
+}
+function buildCloseoutPrompt(t,r){
+  const acc=topicAcc(t.id);
+  return [
+    "أريد إغلاق "+readingLabel(t,r)+" ("+(t.en||t.ar)+").",
+    "المرحلة الحالية: "+stageProgressLabel(r)+".",
+    "حالة المصادر: "+summarizeSourceMap(r)+".",
+    "دقتي في أسئلة هذا الموضوع حتى الآن: "+(acc?Math.round(acc.acc)+"٪ على "+acc.a+" سؤال":"لا بيانات كافية بعد")+".",
+    "راجع معي: هل هذه القراءة جاهزة للإغلاق فعلاً؟ وما الفجوات المتبقية قبل الانتقال للقراءة التالية؟"
+  ].join("\n");
+}
+function stagePanel(r){
+  const det=document.createElement("details");
+  const sum=document.createElement("summary");
+  const cc=contentCompleted(r), er=stagesExamReady(r);
+  sum.innerHTML='<span>مراحل الإنجاز</span><span class="badges"><span class="badge'+(cc?" on":"")+'">Content Completed</span><span class="badge'+(er?" on":"")+'">Exam Ready</span></span>';
+  det.appendChild(sum);
+  const body=document.createElement("div"); body.className="db";
+  const list=document.createElement("div"); list.className="stage-list";
+  STAGE_DEFS.forEach(([key,label])=>{
+    const item=document.createElement("label"); item.className="stage-item"+(r.stages[key]?" done":"");
+    item.innerHTML='<input type="checkbox"'+(r.stages[key]?" checked":"")+'><span>'+esc(label)+'</span>';
+    item.querySelector("input").onchange=e=>{
+      r.stages[key]=e.target.checked;
+      item.classList.toggle("done", e.target.checked);
+      const cc2=contentCompleted(r), er2=stagesExamReady(r);
+      const badges=sum.querySelectorAll(".badge");
+      badges[0].classList.toggle("on",cc2); badges[1].classList.toggle("on",er2);
+      save(); renderAll();
+    };
+    list.appendChild(item);
+  });
+  body.appendChild(list);
+  det.appendChild(body);
+  return det;
+}
+function sourceMapPanel(r){
+  const det=document.createElement("details");
+  det.innerHTML='<summary><span>خريطة المصادر</span></summary>';
+  const body=document.createElement("div"); body.className="db";
+  const grid=document.createElement("div"); grid.className="srcmap-grid";
+  const selField=(label,key,opts)=>{
+    const f=document.createElement("div"); f.className="srcmap-field";
+    f.innerHTML='<label>'+esc(label)+'</label>';
+    const s=document.createElement("select");
+    opts.forEach(([v,l])=>{ const o=document.createElement("option");o.value=v;o.textContent=l;if(r.sourceMap[key]===v)o.selected=true;s.appendChild(o); });
+    s.onchange=()=>{ r.sourceMap[key]=s.value; save(); };
+    f.appendChild(s);
+    return f;
+  };
+  grid.appendChild(selField("PrepNuggets","prepnuggets",[["none","لم أبدأ"],["partial","جزئي"],["done","مكتمل"]]));
+  grid.appendChild(selField("Mark Video","markVideo",[["none","لم أشاهده"],["partial","شاهدت أجزاء محددة"],["done","مكتمل"]]));
+  grid.appendChild(selField("Mark Notes","markNotes",[["none","لم أراجع"],["done","تمت المراجعة"]]));
+  grid.appendChild(selField("Mark Formula Sheet","markFormula",[["na","غير مطلوب"],["done","تمت المراجعة"]]));
+  const checkGroup=(title,obj,defs)=>{
+    const g=document.createElement("div"); g.className="srcmap-group";
+    g.innerHTML='<b>'+esc(title)+'</b>';
+    const cs=document.createElement("div"); cs.className="srcmap-checks";
+    defs.forEach(([k,l])=>{
+      const lab=document.createElement("label"); lab.className="srcmap-check";
+      lab.innerHTML='<input type="checkbox"'+(obj[k]?" checked":"")+'><span>'+esc(l)+'</span>';
+      lab.querySelector("input").onchange=e=>{ obj[k]=e.target.checked; save(); };
+      cs.appendChild(lab);
+    });
+    g.appendChild(cs);
+    return g;
+  };
+  grid.appendChild(checkGroup("Schweser",r.sourceMap.schweser,[["examFocus","Exam Focus"],["profNotes","Professor's Notes"],["keyConcepts","Key Concepts"],["moduleQuiz","Module Quiz"]]));
+  grid.appendChild(checkGroup("CFA Institute",r.sourceMap.cfai,[["curriculum","Curriculum"],["examples","Examples"],["practice","Practice Questions"],["blueBox","Blue Box / End-of-Reading"]]));
+  const ssG=document.createElement("div"); ssG.className="srcmap-group";
+  ssG.innerHTML='<b>Secret Sauce (للمراجعة النهائية فقط)</b>';
+  const ssLab=document.createElement("label"); ssLab.className="srcmap-check";
+  ssLab.innerHTML='<input type="checkbox"'+(r.sourceMap.secretSauce?" checked":"")+'><span>تمت المراجعة</span>';
+  ssLab.querySelector("input").onchange=e=>{ r.sourceMap.secretSauce=e.target.checked; save(); };
+  ssG.appendChild(ssLab);
+  grid.appendChild(ssG);
+  const pagesG=document.createElement("div"); pagesG.className="srcmap-group";
+  pagesG.innerHTML='<b>أرقام صفحات مهمة (اختياري)</b>';
+  const pagesGrid=document.createElement("div"); pagesGrid.className="srcmap-grid";
+  [["mark","Mark"],["schweser","Schweser"],["cfai","CFA Institute"],["secretSauce","Secret Sauce"]].forEach(([k,l])=>{
+    const f=document.createElement("div"); f.className="srcmap-field";
+    f.innerHTML='<label>'+esc(l)+'</label>';
+    const inp=document.createElement("input"); inp.type="text"; inp.placeholder="مثال: 45, 112-114"; inp.value=r.pages[k]||"";
+    inp.onchange=()=>{ r.pages[k]=inp.value; save(); };
+    f.appendChild(inp);
+    pagesGrid.appendChild(f);
+  });
+  pagesG.appendChild(pagesGrid);
+  grid.appendChild(pagesG);
+  body.appendChild(grid);
+  det.appendChild(body);
+  return det;
+}
+function briefPanel(t,r){
+  const det=document.createElement("details");
+  det.innerHTML='<summary><span>ملخص ما قبل الأسئلة (Pre-Question Brief)</span></summary>';
+  const body=document.createElement("div"); body.className="db";
+  const grid=document.createElement("div"); grid.className="brief-grid";
+  const quick=[["primarySource","المصدر الأساسي الذي استخدمته","text"],["confidence","مستوى الثقة (1-5)","number"],
+    ["difficultParts","الأجزاء التي شعرت أنها صعبة","area"],["previousResult","نتيجتي السابقة إن وجدت","text"]];
+  quick.forEach(([key,label,kind])=>{
+    const f=document.createElement("div"); f.className="brief-field";
+    f.innerHTML='<label>'+esc(label)+'</label>';
+    const el=document.createElement(kind==="area"?"textarea":"input");
+    if(kind==="number"){ el.type="number"; el.min=1; el.max=5; el.step=1; }
+    else if(kind==="text") el.type="text";
+    el.value=(r.brief[key]!=null?r.brief[key]:"");
+    el.onchange=el.onblur=()=>{ r.brief[key]= kind==="number" ? (el.value===""?null:Number(el.value)) : el.value; save(); };
+    f.appendChild(el);
+    grid.appendChild(f);
+  });
+  const fields=[
+    ["markIdeas","أهم أفكار Mark"],["schweserTips","أهم Exam Tips من Schweser"],["profNotes","Professor's Notes"],
+    ["formulas","أهم المعادلات"],["understand","النقاط التي يجب فهمها لا حفظها"],["memorize","النقاط التي يجب حفظها"],
+    ["confusions","الفروقات التي يكثر الخلط بينها"],["cfaiTraps","فخاخ CFAI المحتملة"],
+    ["prepnuggetsGaps","نقاط قد يكون PrepNuggets اختصرها"],["checklist","آخر قائمة مراجعة قبل دخول الأسئلة"]
+  ];
+  fields.forEach(([key,label])=>{
+    const f=document.createElement("div"); f.className="brief-field";
+    f.innerHTML='<label>'+esc(label)+'</label>';
+    const ta=document.createElement("textarea"); ta.value=r.brief[key]||"";
+    ta.onblur=()=>{ r.brief[key]=ta.value; save(); };
+    f.appendChild(ta);
+    grid.appendChild(f);
+  });
+  const chatF=document.createElement("div"); chatF.className="brief-field";
+  chatF.innerHTML='<label>رد ChatGPT (احفظه هنا)</label>';
+  const chatTa=document.createElement("textarea"); chatTa.style.minHeight="90px";
+  chatTa.value=r.brief.chatReply||""; chatTa.placeholder="الصق هنا رد ChatGPT بعد إرسال طلب الـBrief…";
+  chatTa.onblur=()=>{ r.brief.chatReply=chatTa.value; save(); };
+  chatF.appendChild(chatTa);
+  grid.appendChild(chatF);
+  const actions=document.createElement("div"); actions.className="brief-actions";
+  const copyBtn=document.createElement("button"); copyBtn.type="button"; copyBtn.textContent="نسخ طلب الـBrief إلى ChatGPT";
+  copyBtn.onclick=()=>copyToClipboard(buildBriefPrompt(t,r),"نُسخ طلب الـPre-Question Brief");
+  actions.appendChild(copyBtn);
+  const closeBtn=document.createElement("button"); closeBtn.type="button"; closeBtn.className="ghost"; closeBtn.textContent="نسخ Reading Closeout Request";
+  closeBtn.onclick=()=>copyToClipboard(buildCloseoutPrompt(t,r),"نُسخ طلب إغلاق القراءة");
+  actions.appendChild(closeBtn);
+  grid.appendChild(actions);
+  body.appendChild(grid);
+  det.appendChild(body);
+  return det;
+}
+function hasDetailContent(r){
+  if(!r.stages) return false;
+  return Object.values(r.stages).some(Boolean) || r.sourceMap.prepnuggets!=="none" || r.sourceMap.markVideo!=="none" ||
+    r.sourceMap.markNotes!=="none" || Object.values(r.sourceMap.schweser).some(Boolean) || Object.values(r.sourceMap.cfai).some(Boolean) ||
+    Object.keys(r.brief).some(k=>r.brief[k]);
+}
+
 function rowWrap(t,r){
   const w=document.createElement("div"); w.className="rwrap";
   const nw=document.createElement("div"); nw.className="notewrap";
   const ta=document.createElement("textarea");
   ta.placeholder="ملاحظاتك على هذه القراءة — معادلات، أخطاء متكررة، صفحات ترجع لها…";
   ta.value=r.note||"";
-  const row=rowEl(t,r,()=>{
-    nw.classList.toggle("open");
-    if(nw.classList.contains("open")) ta.focus();
-  });
+  const rd=document.createElement("div"); rd.className="rdetail";
+  let rdBuilt=false;
+  const buildRd=()=>{
+    if(rdBuilt) return; rdBuilt=true;
+    rd.appendChild(stagePanel(r));
+    rd.appendChild(sourceMapPanel(r));
+    rd.appendChild(briefPanel(t,r));
+  };
+  const row=rowEl(t,r,
+    ()=>{ nw.classList.toggle("open"); if(nw.classList.contains("open")) ta.focus(); },
+    ()=>{ buildRd(); rd.classList.toggle("open"); }
+  );
   ta.oninput=()=>{ r.note=ta.value; save();
     const nb=row.querySelector(".r-nbtn"); if(nb) nb.classList.toggle("has", !!(r.note&&r.note.trim())); };
   ta.onblur=ta.oninput;
   nw.appendChild(ta);
-  w.appendChild(row); w.appendChild(nw);
+  w.appendChild(row); w.appendChild(nw); w.appendChild(rd);
   return w;
 }
-function rowEl(t,r,onNote){
+function rowEl(t,r,onNote,onDetail){
   const row=document.createElement("div");
   row.className="row"+(r.mastery!=="none"?" m-"+r.mastery:"")+(r.status==="done"?" s-done":"");
   row.dataset.rid=r.id;
@@ -722,6 +954,12 @@ function rowEl(t,r,onNote){
   nb.className="r-nbtn"+((r.note&&r.note.trim())?" has":""); nb.textContent="✎"; nb.title="ملاحظات";
   nb.onclick=onNote;
   row.appendChild(nb);
+  /* stages / source map / pre-question brief toggle */
+  const db=document.createElement("button");
+  db.className="r-detbtn"+(hasDetailContent(r)?" has":"");
+  db.textContent="التفاصيل"; db.title="مراحل القراءة، خريطة المصادر، وPre-Question Brief";
+  db.onclick=onDetail;
+  row.appendChild(db);
   /* delete (two-tap confirm) */
   const del=document.createElement("button");
   del.className="r-del"; del.innerHTML="×"; del.title="حذف";
