@@ -3,7 +3,7 @@
   "private": true,
   "description": "CFA Level II Personal Coach dashboard (static, GitHub Pages)",
   "scripts": {
-    "test": "node tests/migration.v5-to-v6.test.mjs"
+    "test": "for f in tests/*.test.mjs; do node \"$f\" || exit 1; done"
   },
   "license": "UNLICENSED"
 }

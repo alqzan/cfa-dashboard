@@ -471,36 +471,12 @@ function renderPhase(){
 }
 
 /* ---------- render: readiness gauge ---------- */
-function readyValueOf(r){
-  const mastery=({none:0.6,weak:0.5,mid:0.8,strong:1.0})[r.mastery] ?? 0.6;
-  return readingProgress(r)*mastery;
-}
 const clamp01=n=>Math.max(0,Math.min(1,n));
+/* Evidence-based readiness formula lives in assets/js/readiness.js (window.computeReadiness).
+   readinessBreakdown()/overallReadiness() are kept as the stable call sites the rest of this
+   file already uses (weekly report, pace simulator, gauge). */
 function readinessBreakdown(){
-  let contentRaw=0, qbankRaw=0;
-  S.topics.forEach(t=>{
-    let h=0,r=0;
-    t.r.forEach(x=>{ h+=effHrs(x); r+=effHrs(x)*readyValueOf(x); });
-    contentRaw+=(t.weight/100)*(h?r/h:0);
-
-    const q=topicAcc(t.id);
-    if(q){
-      const accuracy=clamp01((q.acc-50)/25);
-      const expected=Math.max(1,S.qGoal*(t.weight/100));
-      const volume=Math.sqrt(clamp01(q.a/expected));
-      qbankRaw+=(t.weight/100)*accuracy*volume;
-    }
-  });
-  const recentMocks=S.mocks.slice().sort((a,b)=>a.date<b.date?-1:1).slice(-3);
-  let mockRaw=0;
-  if(recentMocks.length){
-    const avg=recentMocks.reduce((sum,m)=>sum+m.score,0)/recentMocks.length;
-    const accuracy=clamp01((avg-50)/25);
-    const confidence=.5+.5*Math.min(1,recentMocks.length/3);
-    mockRaw=accuracy*confidence;
-  }
-  const content=contentRaw*50, qbank=qbankRaw*30, mocks=mockRaw*20;
-  return {content:content,qbank:qbank,mocks:mocks,total:content+qbank+mocks};
+  return computeReadiness();
 }
 function overallReadiness(){
   return readinessBreakdown().total;
@@ -509,9 +485,11 @@ function renderReadiness(){
   const rb=readinessBreakdown(), v=Math.round(rb.total);
   $("#readyVal").textContent=String(v);
   $("#readyBreakdown").innerHTML=
-    '<span class="ready-part">المحتوى <b>'+fmt(rb.content)+'/50</b></span>'+
-    '<span class="ready-part">الأسئلة <b>'+fmt(rb.qbank)+'/30</b></span>'+
-    '<span class="ready-part">المحاكيات <b>'+fmt(rb.mocks)+'/20</b></span>';
+    '<span class="ready-part">المحتوى والمراحل <b>'+fmt(rb.content)+'/'+rb.weights.content+'</b></span>'+
+    '<span class="ready-part">الإتقان والاحتفاظ <b>'+fmt(rb.mastery)+'/'+rb.weights.mastery+'</b></span>'+
+    '<span class="ready-part">بنك الأسئلة <b>'+fmt(rb.qbank)+'/'+rb.weights.qbank+'</b></span>'+
+    '<span class="ready-part">إغلاق الأخطاء <b>'+fmt(rb.errors)+'/'+rb.weights.errors+'</b></span>'+
+    '<span class="ready-part">المحاكيات <b>'+fmt(rb.mocks)+'/'+rb.weights.mocks+'</b></span>';
   const arc=$("#gaugeArc"); arc.style.strokeDashoffset=(100-v);
   let label,color;
   if(v<50){ label="بعيد — ركّز على التغطية أولاً"; color="var(--bad)"; }
@@ -2186,8 +2164,11 @@ function contentPtsAtFull(){
     t.r.forEach(x=>{ const m=({none:0.8,weak:0.5,mid:0.8,strong:1.0})[x.mastery] ?? 0.8; h+=effHrs(x); r+=effHrs(x)*m; });
     raw+=(t.weight/100)*(h?r/h:0);
   });
-  return raw*50;
+  return raw*READINESS_WEIGHTS.content;
 }
+/* Pace only drives study hours, so only the content and qbank buckets are meaningfully
+   projectable from "what if I studied p hours/day". Mastery/errors/mocks are passed through
+   at their current actual value — same honest-caveat pattern the old 3-bucket sim used. */
 function projectAt(p){
   const T=totals(), sdl=studyDaysLeft(), edl=examDaysLeft();
   const rb=readinessBreakdown();
@@ -2204,10 +2185,11 @@ function projectAt(p){
     const expected=Math.max(1,S.qGoal*(t.weight/100));
     qbankRaw+=(t.weight/100)*accuracy*Math.sqrt(clamp01(q.a*qMult/expected));
   });
-  const qbank=qbankRaw*30;
+  const qbank=qbankRaw*READINESS_WEIGHTS.qbank;
   let finish=null, diff=null;
   if(T.left>0.01 && p>0){ const d=Math.ceil(T.left/p); finish=shiftDateKey(todayKey(),d); diff=daysBetweenKeys(contentDeadline(),finish); }
-  return {content:content, qbank:qbank, mocks:rb.mocks, total:content+qbank+rb.mocks, projQ:projQ, finish:finish, diff:diff};
+  return {content:content, qbank:qbank, mastery:rb.mastery, errors:rb.errors, mocks:rb.mocks,
+    total:content+qbank+rb.mastery+rb.errors+rb.mocks, projQ:projQ, finish:finish, diff:diff};
 }
 function renderSim(){
   const host=$("#simCard"); if(!host) return;
@@ -2241,13 +2223,17 @@ function renderSim(){
     '<div class="sim-wrap">'+
       '<div class="sim-bar">'+
         '<i class="s-c" style="width:'+seg(r.content)+'%"></i>'+
+        '<i class="s-mastery" style="width:'+seg(r.mastery)+'%"></i>'+
         '<i class="s-q" style="width:'+seg(r.qbank)+'%"></i>'+
+        '<i class="s-errors" style="width:'+seg(r.errors)+'%"></i>'+
         '<i class="s-m" style="width:'+seg(r.mocks)+'%"></i>'+
       '</div>'+
       '<div class="sim-mark" style="inset-inline-start:70%"><b>عتبة ٧٠</b></div>'+
     '</div>'+
     '<div class="sim-leg"><span><i style="background:var(--gold)"></i>المحتوى '+fmt(r.content)+'</span>'+
+      '<span><i style="background:#8E7CC3"></i>الإتقان '+fmt(r.mastery)+'</span>'+
       '<span><i style="background:#6E8CC9"></i>الأسئلة '+fmt(r.qbank)+'</span>'+
+      '<span><i style="background:#D88A4B"></i>إغلاق الأخطاء '+fmt(r.errors)+'</span>'+
       '<span><i style="background:var(--strong)"></i>المحاكيات '+fmt(r.mocks)+'</span></div>'+
     '<div class="sim-note" id="simNote"></div>';
   const rng=host.querySelector("#simRange");

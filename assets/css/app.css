@@ -431,7 +431,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 .sim-bar{display:flex;height:15px;border-radius:8px;overflow:hidden;background:var(--bg2);border:1px solid var(--line)}
 .sim-bar i{display:block;height:100%;transition:width .35s}
 .sim-bar .s-c{background:linear-gradient(90deg,var(--gold-d),var(--gold))}
+.sim-bar .s-mastery{background:#8E7CC3}
 .sim-bar .s-q{background:#6E8CC9}
+.sim-bar .s-errors{background:#D88A4B}
 .sim-bar .s-m{background:var(--strong)}
 .sim-mark{position:absolute;top:0;bottom:-5px;width:2px;background:var(--ink);opacity:.8}
 .sim-mark b{position:absolute;top:-13px;transform:translateX(50%);font-size:9.5px;color:var(--ink);
