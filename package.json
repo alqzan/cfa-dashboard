@@ -1,0 +1,9 @@
+{
+  "name": "cfa-dashboard",
+  "private": true,
+  "description": "CFA Level II Personal Coach dashboard (static, GitHub Pages)",
+  "scripts": {
+    "test": "node tests/migration.v5-to-v6.test.mjs"
+  },
+  "license": "UNLICENSED"
+}

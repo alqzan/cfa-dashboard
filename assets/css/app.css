@@ -94,6 +94,8 @@ h1 small{display:block;font-size:14px;font-weight:500;color:var(--dim);margin-to
 .sec-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
 .sec-head h2{font-family:"Tajawal";font-weight:700;font-size:19px;letter-spacing:-.01em}
 .sec-head p{font-size:12.5px;color:var(--faint);margin-inline-start:auto;text-align:start;max-width:50%}
+.curriculum-note{font-size:11.5px;color:var(--faint);margin:-6px 0 14px}
+.r-name .r-outsyllabus{display:inline-block;font-size:10px;font-weight:600;color:var(--faint);font-family:inherit;border:1px solid var(--line2);border-radius:999px;padding:1px 8px;margin-inline-start:8px;vertical-align:middle}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
 .duo{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:12px}
 

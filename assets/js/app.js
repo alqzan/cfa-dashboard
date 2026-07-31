@@ -43,6 +43,15 @@ function maybeAutoBackup(){
   saveBackups(list);
 }
 
+/* ---------- one-time pre-migration safety net (v5 -> v6) ---------- */
+const PRE_MIGRATION_KEY = "cfa_l2_dash_pre_v6_backup";
+function savePreMigrationBackup(raw){
+  try{
+    if(localStorage.getItem(PRE_MIGRATION_KEY)) return; /* keep the first one only */
+    localStorage.setItem(PRE_MIGRATION_KEY, JSON.stringify({ ts: Date.now(), data: raw }));
+  }catch(e){}
+}
+
 /* ---------- default curriculum (2026, 45 modules) ----------
    weights are official ranges; mid-points sum to 100, used for weighting */
 const DEFAULT = {
@@ -107,19 +116,45 @@ const DEFAULT = {
   ]
 };
 
+/* ---------- source coverage default (per reading) ---------- */
+function defaultSourceMap(){
+  return {
+    prepnuggets:"none",         /* none | partial | done */
+    markVideo:"none",           /* none | partial | done */
+    markNotes:"none",           /* none | done */
+    markFormula:"na",           /* na | done */
+    schweser:{examFocus:false, profNotes:false, keyConcepts:false, moduleQuiz:false},
+    cfai:{curriculum:false, examples:false, practice:false, blueBox:false},
+    secretSauce:false
+  };
+}
+function defaultStages(){
+  return {
+    sourceWatched:false, markNotes:false, examFocus:false, formulas:false,
+    preQuestionBrief:false, cfaiQuestions:false, errorReview:false,
+    closeoutQuiz:false, examReady:false
+  };
+}
+function defaultBrief(){
+  return {
+    markIdeas:"", schweserTips:"", profNotes:"", formulas:"", understand:"",
+    memorize:"", confusions:"", cfaiTraps:"", prepnuggetsGaps:"", checklist:"", chatReply:""
+  };
+}
+
 /* ---------- build / load / migrate state ---------- */
 function fresh(){
   const s = JSON.parse(JSON.stringify(DEFAULT));
-  s.v = 5;
   s.topics.forEach(t=>{
     t.weight = (t.wMin+t.wMax)/2;
     t.r = t.r.map((x,i)=>({id:t.id+"-"+i, ar:x[0], en:x[1], hrs:x[2], status:"todo", mastery:"none", note:"", spent:0}));
   });
-  return s;
+  s.v = 1;
+  return migrate(s);
 }
 function migrate(o){
   const previousVersion = o.v||1;
-  o.v = 5;
+  o.v = 6;
   if(!o.restDays) o.restDays = {};
   if(!o.reviews) o.reviews = {};
   if(o.activeTimer === undefined) o.activeTimer = null;
@@ -168,6 +203,58 @@ function migrate(o){
         });
       }
     }
+  }
+  if(previousVersion<6){
+    /* v5 -> v6 (CFA Personal Coach): purely additive — nothing below removes or renames
+       any existing id, hours, note, review, mock, session, dailyLog or setting.
+       Curriculum framing: CFA Level II 2026 has 42 official readings; this dashboard
+       tracks them as 45 study units (a few readings are split into two trackable units). */
+    o.schemaVersion = 6;
+    o.topics.forEach(t=>{
+      t.r.forEach(r=>{
+        if(r.topicId===undefined) r.topicId = t.id;
+        if(r.readingNo===undefined) r.readingNo = null; /* user-assignable: official reading number per your 2026 curriculum guide */
+        if(r.excludedFraction===undefined) r.excludedFraction = 0;
+        if(r.excludedNote===undefined) r.excludedNote = "";
+        if(r.stages===undefined) r.stages = defaultStages();
+        if(r.sourceMap===undefined) r.sourceMap = defaultSourceMap();
+        if(r.pages===undefined) r.pages = {mark:"",schweser:"",cfai:"",secretSauce:""};
+        if(r.brief===undefined) r.brief = defaultBrief();
+        if(r.readingPractice===undefined) r.readingPractice = []; /* Reading-level question-bank entries */
+        if(r.closeout===undefined) r.closeout = {status:"open", closedAt:null}; /* open|ready|closed */
+      });
+    });
+    /* CFA Institute 2026 syllabus change: Machine Learning LOS E (Neural Networks,
+       Deep Learning Nets, Reinforcement Learning) was removed. The reading itself stays —
+       only that slice is flagged out-of-syllabus and excluded from progress/readiness/plan. */
+    const qm=o.topics.find(t=>t.id==="qm");
+    if(qm){
+      const ml=qm.r.find(r=>(r.en||"").trim().toLowerCase()==="machine learning" || r.ar==="تعلّم الآلة");
+      if(ml && !ml.excludedFraction){
+        ml.excludedFraction = 0.3;
+        ml.excludedNote = "خارج منهج 2026: حذفت CFA Institute LOS E (Neural Networks, Deep Learning Nets, and Reinforcement Learning) من هذه القراءة. الجزء المتبقي فقط يدخل في التقدّم والجاهزية وخطة اليوم.";
+      }
+    }
+    /* legacy topic-level practice entries stay exactly as-is and keep counting in every total;
+       they are additionally indexed as read-only "legacy" rows so new reading-level stats
+       can report on them without double-counting or discarding history. */
+    if(!o.practiceLegacyIndexed){
+      const legacy=[];
+      for(const day in o.practice){
+        for(const topicId in o.practice[day]){
+          const e=o.practice[day][topicId];
+          legacy.push({day:day, topicId:topicId, a:e.a, c:e.c, legacy:true});
+        }
+      }
+      o.practiceLegacyIndexed = legacy.length; /* marker only, source of truth stays o.practice */
+    }
+    if(!o.errors) o.errors = [];                 /* دفتر الأخطاء */
+    if(!o.weaknesses) o.weaknesses = [];          /* نقاط الضعف (cached, recomputed on load) */
+    if(!o.closeoutCfg) o.closeoutCfg = { minQuestions:20, minAccuracy:70, maxGuessRate:35 };
+    if(!o.readinessCfg) o.readinessCfg = null;    /* null = use built-in default weighting */
+    if(!o.deviceId) o.deviceId = "dev-"+Math.random().toString(36).slice(2)+Date.now().toString(36);
+    if(!o.sync) o.sync = { provider:"local", uid:null, lastSyncAt:null, status:"local" };
+    if(o.backupBeforeMigration===undefined) o.backupBeforeMigration = true;
   }
   return o;
 }
@@ -223,6 +310,11 @@ const STAT = {todo:"لم أبدأ",doing:"أذاكرها",done:"أنهيتها"}
 const MCOL = {none:"var(--todo)",weak:"var(--weak)",mid:"var(--mid)",strong:"var(--strong)"};
 const MSCORE = {none:0,weak:1,mid:2,strong:3};
 
+/* effective hours: excludes the portion of a reading's LOS that is out of the active CFA syllabus
+   (e.g. Machine Learning LOS E — Neural Networks/Deep Learning/Reinforcement Learning — dropped for 2026).
+   Excluded content never counts toward progress, readiness, mastery weighting, or the daily plan. */
+function effHrs(r){ return r.hrs*(1-(r.excludedFraction||0)); }
+
 /* progress: completed readings are full; active readings use actual timer hours */
 function readingProgress(r){
   if(r.status==="done") return 1;
@@ -231,12 +323,12 @@ function readingProgress(r){
 }
 function topicHours(t){
   let total=0, done=0;
-  t.r.forEach(r=>{ total+=r.hrs; done+=r.hrs*readingProgress(r); });
+  t.r.forEach(r=>{ total+=effHrs(r); done+=effHrs(r)*readingProgress(r); });
   return {total:total, done:done, frac: total? done/total : 0};
 }
 function topicMastery(t){ /* hours-weighted mastery 0..3, only over touched material */
   let w=0, s=0;
-  t.r.forEach(r=>{ if(r.mastery!=="none"){ w+=r.hrs; s+=MSCORE[r.mastery]*r.hrs; } });
+  t.r.forEach(r=>{ if(r.mastery!=="none"){ w+=effHrs(r); s+=MSCORE[r.mastery]*effHrs(r); } });
   return w? s/w : 0;
 }
 function totals(){
@@ -370,7 +462,7 @@ function readinessBreakdown(){
   let contentRaw=0, qbankRaw=0;
   S.topics.forEach(t=>{
     let h=0,r=0;
-    t.r.forEach(x=>{ h+=x.hrs; r+=x.hrs*readyValueOf(x); });
+    t.r.forEach(x=>{ h+=effHrs(x); r+=effHrs(x)*readyValueOf(x); });
     contentRaw+=(t.weight/100)*(h?r/h:0);
 
     const q=topicAcc(t.id);
@@ -601,8 +693,9 @@ function rowEl(t,r,onNote){
   const subParts=[];
   if(r.spent>0.05) subParts.push("فعلي "+fmt(r.spent)+" سا");
   if(r.status==="doing") subParts.push("تقدّم محسوب "+Math.round(readingProgress(r)*100)+"٪");
+  const outBadge = (r.excludedFraction>0) ? '<span class="r-outsyllabus" title="'+esc(r.excludedNote||"")+'">جزء خارج منهج 2026</span>' : '';
   row.innerHTML=
-    '<div class="r-name" data-edit>'+esc(r.en||r.ar)+(subParts.length?'<span>'+subParts.join(" · ")+'</span>':'')+'</div>'+
+    '<div class="r-name" data-edit>'+esc(r.en||r.ar)+outBadge+(subParts.length?'<span>'+subParts.join(" · ")+'</span>':'')+'</div>'+
     '<div class="r-hrs"><input type="number" min="0" max="40" step="0.5" value="'+r.hrs+'" title="الساعات المقدّرة"><em>سا</em></div>';
   /* status select */
   const st=document.createElement("select");
@@ -924,7 +1017,7 @@ function todaysPlan(){
   const cand=[];
   S.topics.forEach(t=>t.r.forEach(r=>{ if(r.status!=="done" && cfg.excl.indexOf(r.id)===-1 && !cfg.added.some(a=>a.rid===r.id)) cand.push({t:t,r:r,p:priorityOf(r,t)}); }));
   cand.sort((a,b)=>b.p-a.p);
-  const blockMin=c=>{ const remHrs=c.r.hrs*(1-readingProgress(c.r));
+  const blockMin=c=>{ const remHrs=effHrs(c.r)*(1-readingProgress(c.r));
     return Math.round(Math.min(budget, Math.min(55, Math.max(25, remHrs*60)))); };
   const usedTopic={}; blocks.forEach(b=>{ if(b.type==="pick") usedTopic[b.t.id]=1; });
   let last=null, nStudy=0;
@@ -1275,7 +1368,7 @@ function decayRows(){
 }
 function retentionOverall(){
   const rows=decayRows(); let w=0,s=0;
-  rows.forEach(x=>{ const ww=x.r.hrs*(x.t.weight/100); w+=ww; s+=ww*x.ret; });
+  rows.forEach(x=>{ const ww=effHrs(x.r)*(x.t.weight/100); w+=ww; s+=ww*x.ret; });
   return w? s/w : 1;
 }
 function retColor(v){ return v>=0.7?"var(--strong)":(v>=0.45?"var(--mid)":"var(--weak)"); }
@@ -1315,7 +1408,7 @@ function contentPtsAtFull(){
   let raw=0;
   S.topics.forEach(t=>{
     let h=0,r=0;
-    t.r.forEach(x=>{ const m=({none:0.8,weak:0.5,mid:0.8,strong:1.0})[x.mastery] ?? 0.8; h+=x.hrs; r+=x.hrs*m; });
+    t.r.forEach(x=>{ const m=({none:0.8,weak:0.5,mid:0.8,strong:1.0})[x.mastery] ?? 0.8; h+=effHrs(x); r+=effHrs(x)*m; });
     raw+=(t.weight/100)*(h?r/h:0);
   });
   return raw*50;
@@ -1693,7 +1786,18 @@ function boot(){ syncSettings(); renderAll(); renderTopics(); }
 (async function init(){
   let loaded=null;
   try{ loaded = await store.read(); }catch(e){}
-  S = loaded ? migrate(loaded) : fresh();
+  if(loaded){
+    if((loaded.v||1)<6) savePreMigrationBackup(loaded);
+    try{
+      S = migrate(JSON.parse(JSON.stringify(loaded)));
+    }catch(e){
+      console.error("v6 migration failed — keeping your existing data untouched", e);
+      S = loaded; /* rollback: never write a half-migrated object over real data */
+      toast("تعذّرت ترقية البيانات تلقائياً لهذه المرة — لم يتغيّر شيء في تقدّمك", true);
+    }
+  } else {
+    S = fresh();
+  }
   maybeAutoBackup();
   /* a timer left running overnight would otherwise bill today for yesterday's session */
   let staleNote=null;
