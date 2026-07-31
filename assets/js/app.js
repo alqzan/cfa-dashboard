@@ -368,6 +368,8 @@ function findReading(id){ for(const t of S.topics){ const r=t.r.find(x=>x.id===i
 function topicAcc(id){
   let a=0,c=0;
   for(const d in S.practice){ const e=S.practice[d][id]; if(e){ a+=e.a; c+=e.c; } }
+  const t=S.topics.find(x=>x.id===id);
+  if(t) t.r.forEach(r=>{ (r.readingPractice||[]).forEach(p=>{ a+=p.total||0; c+=p.correct||0; }); });
   return a? {a:a,c:c,acc:c/a*100} : null;
 }
 function qbStats(){
@@ -886,11 +888,182 @@ function briefPanel(t,r){
   det.appendChild(body);
   return det;
 }
+/* ---------- reading-level question bank (Phase 3) ---------- */
+const PRACTICE_SOURCES=["CFAI","Mark","Schweser","Mock","PrepNuggets","Other"];
+const SESSION_TYPES=[["first","First Pass"],["review","Review"],["mixed","Mixed"],["closedBook","Closed Book"],["timed","Timed"],["mockReview","Mock Review"]];
+const SESSION_TYPE_LABEL=Object.fromEntries(SESSION_TYPES);
+function readingPracticeStats(r){
+  const list=r.readingPractice||[];
+  let total=0,correct=0,wrong=0,guessedRight=0,slowRight=0,timeSum=0,timeCount=0;
+  list.forEach(p=>{
+    total+=p.total||0; correct+=p.correct||0; wrong+=p.wrong||0;
+    guessedRight+=p.guessedRight||0; slowRight+=p.slowRight||0;
+    if(p.avgTimeSec){ timeSum+=p.avgTimeSec*(p.total||1); timeCount+=(p.total||1); }
+  });
+  const accRaw = total? correct/total*100 : null;
+  const solidCorrect = Math.max(0, correct-guessedRight);
+  const accAdjusted = total? solidCorrect/total*100 : null;
+  const avgTime = timeCount? timeSum/timeCount : null;
+  const sorted=list.slice().sort((a,b)=>a.date<b.date?-1:(a.date>b.date?1:0));
+  const last=sorted[sorted.length-1]||null;
+  const lastAcc = last && last.total ? last.correct/last.total*100 : null;
+  let best=null;
+  sorted.forEach(p=>{ if(p.total){ const a=p.correct/p.total*100; if(best===null||a>best) best=a; } });
+  let trend="none";
+  if(sorted.length>=2){
+    const prev=sorted[sorted.length-2];
+    const prevAcc=prev.total? prev.correct/prev.total*100:null;
+    if(lastAcc!=null && prevAcc!=null) trend = lastAcc>prevAcc+2?"up":(lastAcc<prevAcc-2?"down":"flat");
+  }
+  const guessRate = total? guessedRight/total*100 : 0;
+  const cfg=S.closeoutCfg||{minQuestions:20,minAccuracy:70,maxGuessRate:35};
+  const meetsVolume = total>=cfg.minQuestions;
+  const meetsAccuracy = accAdjusted!=null && accAdjusted>=cfg.minAccuracy;
+  const meetsGuessRate = guessRate<=cfg.maxGuessRate;
+  return {total,correct,wrong,guessedRight,slowRight,accRaw,accAdjusted,avgTime,trend,lastAcc,best,guessRate,
+    meetsVolume,meetsAccuracy,meetsGuessRate,meetsCloseoutQuestions:meetsVolume&&meetsAccuracy&&meetsGuessRate,entries:sorted};
+}
+function practicePanel(t,r){
+  const det=document.createElement("details");
+  det.innerHTML='<summary><span>بنك الأسئلة لهذه القراءة</span></summary>';
+  const body=document.createElement("div"); body.className="db";
+  const form=document.createElement("div"); form.className="pr-form";
+  const mkField=(label,tag,attrs)=>{
+    const lab=document.createElement("label"); lab.textContent=label;
+    const el=document.createElement(tag);
+    if(attrs) Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));
+    lab.appendChild(el);
+    form.appendChild(lab);
+    return el;
+  };
+  const srcEl=mkField("المصدر","select");
+  PRACTICE_SOURCES.forEach(s=>{ const o=document.createElement("option"); o.value=s; o.textContent=s; srcEl.appendChild(o); });
+  const totalEl=mkField("عدد الأسئلة","input",{type:"number",min:1,step:1,placeholder:"0"});
+  const correctEl=mkField("الصحيحة","input",{type:"number",min:0,step:1,placeholder:"0"});
+  const guessEl=mkField("صحيحة بالتخمين","input",{type:"number",min:0,step:1,placeholder:"0"});
+  const slowEl=mkField("صحيحة بطيئة","input",{type:"number",min:0,step:1,placeholder:"0"});
+  const timeEl=mkField("متوسط الوقت (ثانية)","input",{type:"number",min:0,step:1,placeholder:"—"});
+  const typeEl=mkField("نوع الجلسة","select");
+  SESSION_TYPES.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; typeEl.appendChild(o); });
+  const addBtn=document.createElement("button"); addBtn.type="button"; addBtn.className="pr-submit"; addBtn.textContent="+ إضافة جلسة أسئلة";
+  form.appendChild(addBtn);
+  const statsEl=document.createElement("div"); statsEl.className="pr-stats";
+  const entriesEl=document.createElement("div"); entriesEl.className="pr-entries";
+  const trendLabel={up:"↑ تحسّن",down:"↓ تراجع",flat:"→ مستقر",none:"—"};
+  function refresh(){
+    const st=readingPracticeStats(r);
+    statsEl.innerHTML=
+      '<span>الدقة الخام <b>'+(st.accRaw!=null?Math.round(st.accRaw)+"٪":"—")+'</b></span>'+
+      '<span>الدقة المعدلة <b>'+(st.accAdjusted!=null?Math.round(st.accAdjusted)+"٪":"—")+'</b></span>'+
+      '<span>عدد الأسئلة <b>'+st.total+'</b></span>'+
+      '<span>متوسط الوقت <b>'+(st.avgTime!=null?Math.round(st.avgTime)+"ث":"—")+'</b></span>'+
+      '<span>الاتجاه <b>'+trendLabel[st.trend]+'</b></span>'+
+      '<span>آخر نتيجة <b>'+(st.lastAcc!=null?Math.round(st.lastAcc)+"٪":"—")+'</b></span>'+
+      '<span>أفضل نتيجة <b>'+(st.best!=null?Math.round(st.best)+"٪":"—")+'</b></span>'+
+      '<span>حد الإغلاق <b style="color:'+(st.meetsCloseoutQuestions?"var(--strong)":"var(--faint)")+'">'+(st.meetsCloseoutQuestions?"تحقّق":"لم يتحقّق")+'</b></span>';
+    entriesEl.innerHTML="";
+    st.entries.slice().reverse().forEach(p=>{
+      const row=document.createElement("div"); row.className="pr-entry";
+      row.innerHTML='<span>'+fmtDate(p.date)+'</span><span>'+esc(p.source)+'</span><span>'+p.correct+'/'+p.total+'</span>'+
+        (p.guessedRight?'<span>تخمين '+p.guessedRight+'</span>':'')+
+        (p.avgTimeSec?'<span>'+p.avgTimeSec+'ث</span>':'')+
+        '<span>'+(SESSION_TYPE_LABEL[p.sessionType]||p.sessionType)+'</span>';
+      const del=document.createElement("button"); del.type="button"; del.textContent="×"; del.title="حذف";
+      del.onclick=()=>{ r.readingPractice=r.readingPractice.filter(x=>x.id!==p.id); save(); refresh(); renderAll(); };
+      row.appendChild(del);
+      entriesEl.appendChild(row);
+    });
+  }
+  addBtn.onclick=()=>{
+    const total=parseInt(totalEl.value||"0",10);
+    if(!total || total<1){ toast("أدخل عدد الأسئلة", true); return; }
+    const correct=Math.min(total,Math.max(0,parseInt(correctEl.value||"0",10)));
+    const guessedRight=Math.min(correct,Math.max(0,parseInt(guessEl.value||"0",10)));
+    const slowRight=Math.min(correct,Math.max(0,parseInt(slowEl.value||"0",10)));
+    const avgTimeSec=timeEl.value?parseFloat(timeEl.value):null;
+    r.readingPractice.push({
+      id:"rp-"+Date.now()+"-"+Math.random().toString(36).slice(2,7),
+      date:todayKey(), source:srcEl.value, total, correct, wrong:total-correct, guessedRight, slowRight,
+      avgTimeSec, sessionType:typeEl.value
+    });
+    totalEl.value=""; correctEl.value=""; guessEl.value=""; slowEl.value=""; timeEl.value="";
+    save(); refresh(); renderAll();
+    toast("سُجّلت جلسة الأسئلة");
+  };
+  body.appendChild(form); body.appendChild(statsEl); body.appendChild(entriesEl);
+  det.appendChild(body);
+  refresh();
+  return det;
+}
+
+/* ---------- reading closeout (Phase 3) ---------- */
+const CLOSEOUT_LABELS={
+  closed:{text:"Closed — مغلقة",color:"var(--strong)"},
+  ready:{text:"Ready to close",color:"var(--strong)"},
+  needsContent:{text:"يحتاج إكمال المحتوى",color:"var(--faint)"},
+  needsQuestions:{text:"Needs more questions",color:"var(--mid)"},
+  needsErrorReview:{text:"Needs error review",color:"var(--bad)"},
+  needsFormulaReview:{text:"Needs formula review",color:"var(--mid)"}
+};
+function closeoutStatus(t,r){
+  if(r.closeout && r.closeout.status==="closed") return "closed";
+  if(!contentCompleted(r)) return "needsContent";
+  const openErr=S.errors.filter(e=>e.readingId===r.id && (e.status==="open"||e.status==="reopened"));
+  if(openErr.length) return "needsErrorReview";
+  if(!r.stages.formulas) return "needsFormulaReview";
+  const st=readingPracticeStats(r);
+  if(!st.meetsCloseoutQuestions) return "needsQuestions";
+  return "ready";
+}
+function closeoutMissingText(t,r,status){
+  const bits=[];
+  if(status==="needsContent") bits.push("أكمل مراحل المحتوى الخمس الأولى أولاً.");
+  if(status==="needsErrorReview") bits.push("لديك خطأ مفتوح مرتبط بهذه القراءة — أغلقه أو حدّث حالته أولاً.");
+  if(status==="needsFormulaReview") bits.push("لم تُراجع المعادلات الأساسية بعد.");
+  if(status==="needsQuestions"){
+    const st=readingPracticeStats(r); const cfg=S.closeoutCfg;
+    if(!st.meetsVolume) bits.push("عدد الأسئلة المحلولة أقل من الحد الأدنى ("+cfg.minQuestions+").");
+    if(!st.meetsAccuracy) bits.push("الدقة المعدلة أقل من الحد الأدنى ("+cfg.minAccuracy+"٪).");
+    if(!st.meetsGuessRate) bits.push("نسبة التخمين مرتفعة (أعلى من "+cfg.maxGuessRate+"٪).");
+  }
+  return bits.join(" ");
+}
+function closeoutPanel(t,r){
+  const det=document.createElement("details");
+  det.innerHTML='<summary><span>إغلاق القراءة</span></summary>';
+  const body=document.createElement("div"); body.className="db";
+  const badge=document.createElement("span"); badge.className="closeout-badge";
+  const missing=document.createElement("div"); missing.className="closeout-missing";
+  const actions=document.createElement("div"); actions.className="closeout-actions";
+  const btn=document.createElement("button"); btn.type="button";
+  function refresh(){
+    const status=closeoutStatus(t,r);
+    const lab=CLOSEOUT_LABELS[status];
+    badge.textContent=lab.text; badge.style.color=lab.color; badge.style.borderColor=lab.color;
+    missing.textContent = (status==="ready"||status==="closed") ? "" : closeoutMissingText(t,r,status);
+    btn.textContent = status==="closed" ? "أُغلقت — إعادة فتح" : "اختبار إغلاق القراءة";
+    btn.disabled = status!=="ready" && status!=="closed";
+    btn.style.opacity = btn.disabled ? .5 : 1;
+  }
+  btn.onclick=()=>{
+    const status=closeoutStatus(t,r);
+    if(status==="closed"){ r.closeout={status:"open",closedAt:null}; save(); refresh(); renderAll(); toast("أُعيد فتح القراءة"); return; }
+    if(status!=="ready"){ toast("لا يمكن الإغلاق بعد — راجع الشروط الناقصة", true); return; }
+    r.closeout={status:"closed",closedAt:todayKey()}; r.stages.examReady=true;
+    save(); refresh(); renderAll(); toast("أُغلقت القراءة ✓");
+  };
+  actions.appendChild(btn);
+  body.appendChild(badge); body.appendChild(missing); body.appendChild(actions);
+  det.appendChild(body);
+  refresh();
+  return det;
+}
+
 function hasDetailContent(r){
   if(!r.stages) return false;
   return Object.values(r.stages).some(Boolean) || r.sourceMap.prepnuggets!=="none" || r.sourceMap.markVideo!=="none" ||
     r.sourceMap.markNotes!=="none" || Object.values(r.sourceMap.schweser).some(Boolean) || Object.values(r.sourceMap.cfai).some(Boolean) ||
-    Object.keys(r.brief).some(k=>r.brief[k]);
+    Object.keys(r.brief).some(k=>r.brief[k]) || (r.readingPractice&&r.readingPractice.length>0) || (r.closeout&&r.closeout.status==="closed");
 }
 
 function rowWrap(t,r){
@@ -906,6 +1079,8 @@ function rowWrap(t,r){
     rd.appendChild(stagePanel(r));
     rd.appendChild(sourceMapPanel(r));
     rd.appendChild(briefPanel(t,r));
+    rd.appendChild(practicePanel(t,r));
+    rd.appendChild(closeoutPanel(t,r));
   };
   const row=rowEl(t,r,
     ()=>{ nw.classList.toggle("open"); if(nw.classList.contains("open")) ta.focus(); },
@@ -1381,8 +1556,370 @@ function stopTimer(silent){
   renderTopics(); renderAll();
 }
 
+/* ================= دفتر الأخطاء (error notebook) ================= */
+const ERR_SOURCES=["CFAI","Mark","Schweser","Mock","PrepNuggets","Other"];
+const RESULT_TYPES=[["wrong","خطأ"],["guessedRight","صحيح بالتخمين"],["slowRight","صحيح لكن بطيء"],["confidentRight","صحيح وواثق"]];
+const REASON_TAGS=[["understanding","نقص فهم"],["formula","نسيان معادلة"],["wrongModel","اختيار نموذج خاطئ"],
+  ["conceptConfusion","خلط بين مفهومين"],["misreadVignette","سوء قراءة الـVignette"],["ignoredInfo","تجاهل معلومة"],
+  ["calcError","خطأ حسابي"],["calculatorError","خطأ آلة حاسبة"],["timePressure","ضغط وقت"],
+  ["changedAnswer","تغيير الإجابة الصحيحة"],["other","Other"]];
+const ERR_STATUSES=[["open","مفتوح"],["inProgress","قيد المعالجة"],["improved","تحسن"],["closed","مغلق"],["reopened","عاد للظهور"]];
+const RESULT_LABEL=Object.fromEntries(RESULT_TYPES);
+const REASON_LABEL=Object.fromEntries(REASON_TAGS);
+const ERR_STATUS_LABEL=Object.fromEntries(ERR_STATUSES);
+function allReadingsFlat(){
+  const out=[];
+  S.topics.forEach(t=>t.r.forEach(r=>out.push({t:t,r:r})));
+  return out;
+}
+function errRepeatCount(e){
+  return S.errors.filter(x=>x.readingId===e.readingId && x.los && e.los && norm(x.los)===norm(e.los)).length;
+}
+let errFilters={topicId:"",readingId:"",reason:"",source:"",status:"",repeated:false,guessed:false,slow:false};
+let errQuery="";
+let errFormOpen=false, errEditingId=null;
+function buildErrorPrompt(e){
+  const f=findReading(e.readingId);
+  const t=f?f.t:null;
+  return [
+    "أخطأت في سؤال من "+(f?readingLabel(f.t,f.r):"")+(e.los?(" — المفهوم: "+e.los):""),
+    "المصدر: "+e.source, "نوع النتيجة: "+(RESULT_LABEL[e.resultType]||e.resultType),
+    "سبب التعثر الذي أظنه: "+(REASON_LABEL[e.reasonTag]||e.reasonTag),
+    "اخترت: "+(e.userChoice||"—")+" — الإجابة الصحيحة: "+(e.correctChoice||"—"),
+    "طريقة تفكيري: "+(e.userReasoning||"—"),
+    "تكرر هذا الخطأ "+errRepeatCount(e)+" مرة/مرات.",
+    "",
+    "اشرح لي سبب خطأي، ارجع إلى Mark وSchweser وCFAI 2026، وحدّد الفكرة الناقصة تحديداً، وأعطني قاعدة مختصرة أتذكرها، ثم أنشئ لي سؤالاً مشابهاً لاحقاً لأعيد اختبار نفسي فيه."
+  ].join("\n");
+}
+function errPasses(e){
+  if(errFilters.topicId && e.topicId!==errFilters.topicId) return false;
+  if(errFilters.readingId && e.readingId!==errFilters.readingId) return false;
+  if(errFilters.reason && e.reasonTag!==errFilters.reason) return false;
+  if(errFilters.source && e.source!==errFilters.source) return false;
+  if(errFilters.status && e.status!==errFilters.status) return false;
+  if(errFilters.repeated && errRepeatCount(e)<2) return false;
+  if(errFilters.guessed && e.resultType!=="guessedRight") return false;
+  if(errFilters.slow && e.resultType!=="slowRight") return false;
+  if(errQuery){
+    const hay=norm((e.los||"")+" "+(e.userReasoning||"")+" "+(e.correctRule||""));
+    if(hay.indexOf(errQuery)===-1) return false;
+  }
+  return true;
+}
+function emptyErrorDraft(){
+  return {id:null,date:todayKey(),topicId:S.topics[0].id,readingId:S.topics[0].r[0].id,los:"",source:"CFAI",
+    resultType:"wrong",reasonTag:"understanding",userChoice:"",correctChoice:"",userReasoning:"",correctRule:"",
+    markRef:"",schweserRef:"",cfaiRef:"",imageUrl:"",timeSpentSec:null,confidence:null,status:"open",
+    retestDate:"",coachNote:"",retestQuestion:""};
+}
+function renderErrors(){
+  const host=$("#errCard"); if(!host) return;
+  const scrollBack=host.scrollTop;
+  host.innerHTML="";
+  const bar=document.createElement("div"); bar.className="err-toolbar";
+  const topicSel=document.createElement("select");
+  topicSel.innerHTML='<option value="">كل المواد</option>'+S.topics.map(t=>'<option value="'+t.id+'"'+(errFilters.topicId===t.id?" selected":"")+'>'+esc(t.abbr)+'</option>').join("");
+  topicSel.onchange=()=>{ errFilters.topicId=topicSel.value; errFilters.readingId=""; renderErrors(); };
+  bar.appendChild(topicSel);
+  const readingSel=document.createElement("select");
+  const readingPool = errFilters.topicId ? (S.topics.find(t=>t.id===errFilters.topicId)||{r:[]}).r : allReadingsFlat().map(x=>x.r);
+  readingSel.innerHTML='<option value="">كل القراءات</option>'+readingPool.map(r=>'<option value="'+r.id+'"'+(errFilters.readingId===r.id?" selected":"")+'>'+esc(r.en||r.ar)+'</option>').join("");
+  readingSel.onchange=()=>{ errFilters.readingId=readingSel.value; renderErrors(); };
+  bar.appendChild(readingSel);
+  const reasonSel=document.createElement("select");
+  reasonSel.innerHTML='<option value="">كل الأسباب</option>'+REASON_TAGS.map(([v,l])=>'<option value="'+v+'"'+(errFilters.reason===v?" selected":"")+'>'+l+'</option>').join("");
+  reasonSel.onchange=()=>{ errFilters.reason=reasonSel.value; renderErrors(); };
+  bar.appendChild(reasonSel);
+  const srcSel=document.createElement("select");
+  srcSel.innerHTML='<option value="">كل المصادر</option>'+ERR_SOURCES.map(s=>'<option value="'+s+'"'+(errFilters.source===s?" selected":"")+'>'+s+'</option>').join("");
+  srcSel.onchange=()=>{ errFilters.source=srcSel.value; renderErrors(); };
+  bar.appendChild(srcSel);
+  const statusSel=document.createElement("select");
+  statusSel.innerHTML='<option value="">كل الحالات</option>'+ERR_STATUSES.map(([v,l])=>'<option value="'+v+'"'+(errFilters.status===v?" selected":"")+'>'+l+'</option>').join("");
+  statusSel.onchange=()=>{ errFilters.status=statusSel.value; renderErrors(); };
+  bar.appendChild(statusSel);
+  const search=document.createElement("input"); search.type="search"; search.className="err-search";
+  search.placeholder="ابحث في المفهوم أو الملاحظات…"; search.value=errQuery;
+  search.oninput=()=>{ errQuery=norm(search.value); renderErrors(); };
+  bar.appendChild(search);
+  [["repeated","الأخطاء المتكررة"],["guessed","صحيح بالتخمين"],["slow","أسئلة بطيئة"]].forEach(([k,l])=>{
+    const chip=document.createElement("span"); chip.className="err-flag"+(errFilters[k]?" on":""); chip.textContent=l;
+    chip.onclick=()=>{ errFilters[k]=!errFilters[k]; renderErrors(); };
+    bar.appendChild(chip);
+  });
+  const addBtn=document.createElement("button"); addBtn.className="err-addbtn"; addBtn.textContent="+ سجّل خطأً";
+  addBtn.onclick=()=>{ errEditingId=null; errFormOpen=!errFormOpen; renderErrors(); };
+  bar.appendChild(addBtn);
+  host.appendChild(bar);
+
+  if(errFormOpen) host.appendChild(errorForm(errEditingId?S.errors.find(x=>x.id===errEditingId):emptyErrorDraft()));
+
+  const list=document.createElement("div"); list.className="err-list";
+  const rows=S.errors.filter(errPasses).sort((a,b)=>a.date<b.date?1:(a.date>b.date?-1:0));
+  if(!rows.length){
+    list.innerHTML='<div class="err-empty">لا توجد أخطاء مطابقة — سجّل أول خطأ من زر «+ سجّل خطأً» أعلاه.</div>';
+  } else {
+    rows.forEach(e=>list.appendChild(errorItem(e)));
+  }
+  host.appendChild(list);
+  host.scrollTop=scrollBack;
+}
+function errorForm(draft){
+  const wrap=document.createElement("div"); wrap.className="err-form open";
+  const grid=document.createElement("div"); grid.className="fgrid";
+  const mk=(label,tag,attrs,full)=>{
+    const lab=document.createElement("label"); lab.textContent=label; if(full) lab.className="full";
+    const el=document.createElement(tag);
+    if(attrs) Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));
+    lab.appendChild(el); grid.appendChild(lab);
+    return el;
+  };
+  const dateEl=mk("التاريخ","input",{type:"date",value:draft.date});
+  const topicEl=mk("المادة","select");
+  S.topics.forEach(t=>{ const o=document.createElement("option"); o.value=t.id; o.textContent=t.abbr; if(t.id===draft.topicId)o.selected=true; topicEl.appendChild(o); });
+  const readingEl=mk("Reading","select");
+  const fillReadings=()=>{ readingEl.innerHTML=""; const t=S.topics.find(x=>x.id===topicEl.value)||S.topics[0];
+    t.r.forEach(r=>{ const o=document.createElement("option"); o.value=r.id; o.textContent=r.en||r.ar; if(r.id===draft.readingId)o.selected=true; readingEl.appendChild(o); }); };
+  fillReadings();
+  topicEl.onchange=fillReadings;
+  const losEl=mk("LOS أو المفهوم","input",{type:"text",value:draft.los||"",placeholder:"مثال: DDM terminal value"});
+  const srcEl=mk("مصدر السؤال","select");
+  ERR_SOURCES.forEach(s=>{ const o=document.createElement("option"); o.value=s; o.textContent=s; if(s===draft.source)o.selected=true; srcEl.appendChild(o); });
+  const resultEl=mk("نوع النتيجة","select");
+  RESULT_TYPES.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; if(v===draft.resultType)o.selected=true; resultEl.appendChild(o); });
+  const reasonEl=mk("سبب التعثر","select");
+  REASON_TAGS.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; if(v===draft.reasonTag)o.selected=true; reasonEl.appendChild(o); });
+  const statusEl=mk("الحالة","select");
+  ERR_STATUSES.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; if(v===draft.status)o.selected=true; statusEl.appendChild(o); });
+  const userChoiceEl=mk("اختيارك","input",{type:"text",value:draft.userChoice||""});
+  const correctChoiceEl=mk("الإجابة الصحيحة","input",{type:"text",value:draft.correctChoice||""});
+  const timeEl=mk("الوقت المستغرق (ثانية)","input",{type:"number",min:0,step:1,value:draft.timeSpentSec!=null?draft.timeSpentSec:""});
+  const confEl=mk("درجة الثقة (1-5)","input",{type:"number",min:1,max:5,step:1,value:draft.confidence!=null?draft.confidence:""});
+  const retestEl=mk("موعد إعادة الاختبار","input",{type:"date",value:draft.retestDate||""});
+  const imgEl=mk("رابط صورة السؤال (اختياري)","input",{type:"text",value:draft.imageUrl||"",placeholder:"رابط خارجي — لا تُخزَّن صور داخل المتصفح"});
+  const reasoningEl=mk("شرح طريقة تفكيرك","textarea",{},true); reasoningEl.value=draft.userReasoning||"";
+  const ruleEl=mk("القاعدة الصحيحة","textarea",{},true); ruleEl.value=draft.correctRule||"";
+  const markRefEl=mk("مرجع Mark والصفحة","input",{type:"text",value:draft.markRef||""});
+  const schwRefEl=mk("مرجع Schweser والصفحة","input",{type:"text",value:draft.schweserRef||""});
+  const cfaiRefEl=mk("مرجع CFAI والصفحة","input",{type:"text",value:draft.cfaiRef||""});
+  const noteEl=mk("ملاحظة المدرّب","textarea",{},true); noteEl.value=draft.coachNote||"";
+  const retestQEl=mk("سؤال قصير لإعادة الاختبار","textarea",{},true); retestQEl.value=draft.retestQuestion||"";
+  const actions=document.createElement("div"); actions.className="factions";
+  const saveBtn=document.createElement("button"); saveBtn.className="primary"; saveBtn.type="button"; saveBtn.textContent=draft.id?"حفظ التعديلات":"حفظ الخطأ";
+  saveBtn.onclick=()=>{
+    const rec={
+      id: draft.id || ("err-"+Date.now()+"-"+Math.random().toString(36).slice(2,7)),
+      date:dateEl.value||todayKey(), topicId:topicEl.value, readingId:readingEl.value, los:losEl.value.trim(),
+      source:srcEl.value, resultType:resultEl.value, reasonTag:reasonEl.value,
+      userChoice:userChoiceEl.value, correctChoice:correctChoiceEl.value,
+      userReasoning:reasoningEl.value, correctRule:ruleEl.value,
+      markRef:markRefEl.value, schweserRef:schwRefEl.value, cfaiRef:cfaiRefEl.value,
+      imageUrl:imgEl.value, timeSpentSec: timeEl.value?parseInt(timeEl.value,10):null,
+      confidence: confEl.value?parseInt(confEl.value,10):null, status:statusEl.value,
+      retestDate:retestEl.value, coachNote:noteEl.value, retestQuestion:retestQEl.value,
+      createdAt: draft.createdAt || Date.now(), updatedAt: Date.now()
+    };
+    if(draft.id){ const idx=S.errors.findIndex(x=>x.id===draft.id); S.errors[idx]=rec; }
+    else S.errors.push(rec);
+    errFormOpen=false; errEditingId=null;
+    save(); renderErrors(); renderWeaknesses(); renderAll();
+    toast(draft.id?"تم تحديث الخطأ":"سُجّل الخطأ في الدفتر");
+  };
+  const cancelBtn=document.createElement("button"); cancelBtn.className="ghost"; cancelBtn.type="button"; cancelBtn.textContent="إلغاء";
+  cancelBtn.onclick=()=>{ errFormOpen=false; errEditingId=null; renderErrors(); };
+  actions.appendChild(saveBtn); actions.appendChild(cancelBtn);
+  const actionsLabel=document.createElement("label"); actionsLabel.className="full"; actionsLabel.appendChild(actions);
+  grid.appendChild(actionsLabel);
+  wrap.appendChild(grid);
+  return wrap;
+}
+function errorItem(e){
+  const f=findReading(e.readingId);
+  const item=document.createElement("div"); item.className="err-item";
+  const head=document.createElement("div"); head.className="err-head";
+  const repeat=errRepeatCount(e);
+  head.innerHTML=
+    '<span class="err-title">'+esc(e.los||(f?(f.r.en||f.r.ar):"—"))+'</span>'+
+    '<span class="err-tag result-'+e.resultType+'">'+(RESULT_LABEL[e.resultType]||e.resultType)+'</span>'+
+    '<span class="err-tag status-'+e.status+'">'+(ERR_STATUS_LABEL[e.status]||e.status)+'</span>'+
+    (repeat>=2?'<span class="err-tag">تكرر '+repeat+' مرات</span>':'')+
+    '<span class="err-tag">'+fmtDate(e.date)+'</span>';
+  const body=document.createElement("div"); body.className="err-body";
+  body.innerHTML=
+    '<div>القراءة: <b>'+esc(f?(f.r.en||f.r.ar):"—")+'</b> · المصدر: <b>'+esc(e.source)+'</b> · السبب: <b>'+(REASON_LABEL[e.reasonTag]||e.reasonTag)+'</b></div>'+
+    (e.userChoice||e.correctChoice?('<div>اخترت: <b>'+esc(e.userChoice||"—")+'</b> — الصحيح: <b>'+esc(e.correctChoice||"—")+'</b></div>'):'')+
+    (e.userReasoning?('<div>طريقة تفكيرك: '+esc(e.userReasoning)+'</div>'):'')+
+    (e.correctRule?('<div>القاعدة الصحيحة: '+esc(e.correctRule)+'</div>'):'')+
+    (e.markRef||e.schweserRef||e.cfaiRef?('<div>المراجع: '+[e.markRef&&("Mark "+e.markRef),e.schweserRef&&("Schweser "+e.schweserRef),e.cfaiRef&&("CFAI "+e.cfaiRef)].filter(Boolean).join(" · ")+'</div>'):'')+
+    (e.timeSpentSec?('<div>الوقت المستغرق: '+e.timeSpentSec+' ثانية</div>'):'')+
+    (e.confidence?('<div>الثقة: '+e.confidence+'/5</div>'):'')+
+    (e.retestDate?('<div>موعد إعادة الاختبار: '+fmtDate(e.retestDate)+'</div>'):'')+
+    (e.coachNote?('<div>ملاحظة المدرّب: '+esc(e.coachNote)+'</div>'):'')+
+    (e.retestQuestion?('<div>سؤال إعادة الاختبار: '+esc(e.retestQuestion)+'</div>'):'');
+  const actions=document.createElement("div"); actions.className="err-actions";
+  const copyBtn=document.createElement("button"); copyBtn.className="primary"; copyBtn.type="button"; copyBtn.textContent="نسخ السؤال المتعثر إلى ChatGPT";
+  copyBtn.onclick=()=>copyToClipboard(buildErrorPrompt(e),"نُسخ طلب شرح الخطأ");
+  actions.appendChild(copyBtn);
+  const cycle=["open","inProgress","improved","closed"];
+  const advanceBtn=document.createElement("button"); advanceBtn.className="ghost"; advanceBtn.type="button";
+  advanceBtn.textContent = e.status==="closed" ? "أُغلق ✓" : "الحالة التالية →";
+  advanceBtn.onclick=()=>{
+    if(e.status==="closed") return;
+    const i=cycle.indexOf(e.status);
+    e.status = i>=0 && i<cycle.length-1 ? cycle[i+1] : "improved";
+    e.updatedAt=Date.now(); save(); renderErrors(); renderWeaknesses(); renderAll();
+  };
+  actions.appendChild(advanceBtn);
+  const editBtn=document.createElement("button"); editBtn.className="ghost"; editBtn.type="button"; editBtn.textContent="تعديل";
+  editBtn.onclick=()=>{ errEditingId=e.id; errFormOpen=true; renderErrors(); scrollTo_($(".err-form")); };
+  actions.appendChild(editBtn);
+  const delBtn=document.createElement("button"); delBtn.className="danger"; delBtn.type="button"; delBtn.textContent="حذف";
+  delBtn.onclick=()=>armConfirm(delBtn,()=>{ S.errors=S.errors.filter(x=>x.id!==e.id); save(); renderErrors(); renderWeaknesses(); renderAll(); });
+  actions.appendChild(delBtn);
+  body.appendChild(actions);
+  head.onclick=()=>body.classList.toggle("open");
+  item.appendChild(head); item.appendChild(body);
+  return item;
+}
+
+/* ================= نقاط ضعفي (weakness engine) ================= */
+function retentionOfSafe(id){ try{ return retentionOf(id); }catch(e){ return null; } }
+function computeWeaknesses(){
+  const out=[];
+  const push=(w)=>{ w.id = w.id || (w.kind+"|"+(w.topicId||"")+"|"+(w.readingId||"")+"|"+(w.los||"")); out.push(w); };
+
+  /* 1+5. repeated errors, grouped by reading+concept (also catches guessed/critical patterns) */
+  const groups={};
+  S.errors.forEach(e=>{ const key=e.readingId+"|"+norm(e.los||e.reasonTag); (groups[key]=groups[key]||[]).push(e); });
+  Object.values(groups).forEach(list=>{
+    if(list.length<2) return;
+    const last=list.slice().sort((a,b)=>a.date<b.date?1:-1)[0];
+    const f=findReading(last.readingId);
+    push({kind:"repeatedError", topicId:last.topicId, readingId:last.readingId, los:last.los||REASON_LABEL[last.reasonTag],
+      name:(last.los||REASON_LABEL[last.reasonTag])+" — "+(f?(f.r.en||f.r.ar):""), count:list.length,
+      lastSeen:last.date, severity:Math.min(5,2+list.length), accuracy:null,
+      action:"راجع القاعدة المسجّلة في دفتر الأخطاء لهذا المفهوم قبل أي أسئلة جديدة عليه.",
+      status: list.some(x=>x.status==="reopened")?"عاد للظهور":"مفتوح"});
+  });
+
+  /* reopened errors specifically flagged even without a repeat pair */
+  S.errors.filter(e=>e.status==="reopened").forEach(e=>{
+    const f=findReading(e.readingId);
+    push({kind:"reopened", topicId:e.topicId, readingId:e.readingId, los:e.los,
+      name:"عاد للظهور: "+(e.los||(f?(f.r.en||f.r.ar):"")), count:errRepeatCount(e), lastSeen:e.date,
+      severity:5, accuracy:null, action:"هذا الخطأ أُغلق سابقاً وعاد — يحتاج مراجعة أعمق لا تكرار سطحي.", status:"عاد للظهور"});
+  });
+
+  /* 5(again)+6. formula-forgetting pattern */
+  const formulaErrs=S.errors.filter(e=>e.reasonTag==="formula" && e.status!=="closed");
+  const byReadingFormula={};
+  formulaErrs.forEach(e=>{ (byReadingFormula[e.readingId]=byReadingFormula[e.readingId]||[]).push(e); });
+  Object.entries(byReadingFormula).forEach(([rid,list])=>{
+    const f=findReading(rid); if(!f) return;
+    push({kind:"formula", topicId:f.t.id, readingId:rid, los:"معادلات "+(f.r.en||f.r.ar),
+      name:"معادلات منسية — "+(f.r.en||f.r.ar), count:list.length, lastSeen:list[list.length-1].date,
+      severity:Math.min(5,2+list.length), accuracy:null, action:"راجع ورقة معادلات Mark لهذه القراءة قبل الأسئلة القادمة.", status:"مفتوح"});
+  });
+
+  /* 3+9+10. low-accuracy / high-weight / decayed / mastery-mismatch readings */
+  allReadingsFlat().forEach(({t,r})=>{
+    const st=readingPracticeStats(r);
+    if(st.total>=8 && st.accAdjusted!=null && st.accAdjusted<65){
+      push({kind:"lowAccuracy", topicId:t.id, readingId:r.id, los:null,
+        name:"دقة منخفضة — "+(r.en||r.ar), count:st.total, lastSeen:null,
+        severity: t.weight>=10?5:3, accuracy:st.accAdjusted,
+        action:"دقتك المعدّلة "+Math.round(st.accAdjusted)+"٪ على "+st.total+" سؤال — راجع القراءة قبل أسئلة إضافية.", status:"مفتوح"});
+    }
+    if(t.weight>=10 && contentCompleted(r) && !stagesExamReady(r) && r.status==="done"){
+      push({kind:"highWeightLowReadiness", topicId:t.id, readingId:r.id, los:null,
+        name:"وزن عالٍ وجاهزية غير مكتملة — "+(r.en||r.ar), count:1, lastSeen:null,
+        severity:4, accuracy:st.accAdjusted, action:"هذه القراءة عالية الوزن ولم تصل بعد لمرحلة Exam Ready.", status:"مفتوح"});
+    }
+    if(r.status==="done"){
+      const ret=retentionOfSafe(r.id);
+      if(ret!=null && ret<0.5){
+        push({kind:"decayed", topicId:t.id, readingId:r.id, los:null,
+          name:"تدهورت في الذاكرة — "+(r.en||r.ar), count:1, lastSeen:null,
+          severity: t.weight>=10?4:2, accuracy:Math.round(ret*100), action:"راجعها الآن — المتانة أقل من 50٪.", status:"مفتوح"});
+      }
+    }
+    if(r.mastery==="strong" && st.total>=8 && st.accAdjusted!=null && st.accAdjusted<65){
+      push({kind:"masteryMismatch", topicId:t.id, readingId:r.id, los:null,
+        name:"شعور الإتقان لا يطابق الأداء — "+(r.en||r.ar), count:st.total, lastSeen:null,
+        severity:4, accuracy:st.accAdjusted, action:"تشعر أنك قوي هنا لكن دقتك "+Math.round(st.accAdjusted)+"٪ فقط — أعد التقييم.", status:"مفتوح"});
+    }
+  });
+
+  /* 5+7. guessed-right and slow-question patterns, aggregated at reading level */
+  allReadingsFlat().forEach(({t,r})=>{
+    const st=readingPracticeStats(r);
+    if(st.total>=10 && st.guessRate>=25){
+      push({kind:"guessedRight", topicId:t.id, readingId:r.id, los:null,
+        name:"نسبة تخمين مرتفعة — "+(r.en||r.ar), count:st.guessedRight, lastSeen:null,
+        severity:3, accuracy:Math.round(st.guessRate), action:"تخمينك الصحيح "+Math.round(st.guessRate)+"٪ من إجاباتك — هذه ليست إجابات مؤكدة.", status:"مفتوح"});
+    }
+    if(st.total>=10 && st.slowRight/st.total>=0.25){
+      push({kind:"slowQuestions", topicId:t.id, readingId:r.id, los:null,
+        name:"أسئلة بطيئة متكررة — "+(r.en||r.ar), count:st.slowRight, lastSeen:null,
+        severity:2, accuracy:null, action:"صحيح لكن بطيء في "+st.slowRight+" سؤالاً — تدرّب بحدّ زمني.", status:"مفتوح"});
+    }
+  });
+
+  /* 8. long time since last review, for completed readings */
+  allReadingsFlat().forEach(({t,r})=>{
+    if(r.status!=="done") return;
+    const rv=S.reviews[r.id]; if(!rv) return;
+    const lastReviewed=shiftDateKey(rv.next,-(RIVL[rv.stage]||RIVL[0]));
+    const days=Math.max(0,daysBetweenKeys(lastReviewed, todayKey()));
+    if(days>=60){
+      push({kind:"staleReview", topicId:t.id, readingId:r.id, los:null,
+        name:"مر وقت طويل دون مراجعة — "+(r.en||r.ar), count:days, lastSeen:lastReviewed,
+        severity:3, accuracy:null, action:"مر "+days+" يوماً منذ آخر مراجعة مسجّلة.", status:"مفتوح"});
+    }
+  });
+
+  out.sort((a,b)=>b.severity-a.severity);
+  return out.slice(0,40);
+}
+function severityClass(sev){ return sev>=4?"sev-high":(sev>=3?"sev-mid":"sev-low"); }
+function renderWeaknesses(){
+  const host=$("#weakCard"); if(!host) return;
+  const list=computeWeaknesses();
+  S.weaknesses=list; /* cache for export/sync — recomputed fresh on every render */
+  host.innerHTML="";
+  const bar=document.createElement("div"); bar.className="weak-toolbar";
+  bar.innerHTML='<p>'+(list.length? (list.length+" نقطة ضعف مكتشفة تلقائياً، الأخطر أولاً."):"لا نقاط ضعف مكتشفة بعد — سجّل أسئلة وأخطاء أكثر ليعمل المحرّك.")+'</p>';
+  const btn=document.createElement("button"); btn.textContent="اختبرني في نقاط ضعفي";
+  btn.onclick=()=>copyToClipboard(buildWeaknessTestPrompt(list),"نُسخ طلب اختبار نقاط الضعف");
+  bar.appendChild(btn);
+  host.appendChild(bar);
+  const wrap=document.createElement("div"); wrap.className="weak-list";
+  if(!list.length){ wrap.innerHTML='<div class="weak-empty">سجّل ممارسة أسئلة وأخطاء ليبدأ المحرّك باكتشاف نقاط ضعفك الحقيقية.</div>'; }
+  list.forEach(w=>{
+    const t=S.topics.find(x=>x.id===w.topicId);
+    const el=document.createElement("div"); el.className="weak-item "+severityClass(w.severity);
+    el.innerHTML=
+      '<div class="weak-head"><div><div class="weak-name">'+esc(w.name)+'</div>'+
+      '<div class="weak-meta">'+(t?esc(t.abbr):"")+(w.count?(' · تكرر/عدد: '+w.count):'')+(w.accuracy!=null?(' · '+Math.round(w.accuracy)+'٪'):'')+
+      (w.lastSeen?(' · آخر ظهور '+fmtDate(w.lastSeen)):'')+'</div></div>'+
+      '<span class="weak-sev">خطورة '+w.severity+'/5</span></div>'+
+      '<div class="weak-action">'+esc(w.action)+'</div>';
+    wrap.appendChild(el);
+  });
+  host.appendChild(wrap);
+}
+function buildWeaknessTestPrompt(list){
+  const top=list.slice(0,5);
+  const lines=["اختبرني في أهم نقاط ضعفي الحالية التالية، بدون إظهار الإجابات الصحيحة أولاً:"];
+  top.forEach((w,i)=>{ lines.push((i+1)+") "+w.name+" — "+w.action); });
+  lines.push("");
+  lines.push("اعطني أسئلة قصيرة على هذه النقاط بالتحديد، بأسلوب CFA Level II، ثم بعد إجابتي أظهر لي الصح والخطأ مع شرح.");
+  return lines.join("\n");
+}
+
 /* ---------- master render ---------- */
-function renderAll(){ renderHero(); renderReadiness(); renderInsights(); renderHeat(); renderToday(); renderDaily(); renderPerf(); renderSim(); renderDecay(); renderExamHint(); renderNowBtn(); renderRestBtn(); }
+function renderAll(){ renderHero(); renderReadiness(); renderInsights(); renderHeat(); renderToday(); renderDaily(); renderPerf(); renderErrors(); renderWeaknesses(); renderSim(); renderDecay(); renderExamHint(); renderNowBtn(); renderRestBtn(); }
 
 /* ---------- events ---------- */
 $("#timerBtn").onclick=()=>{ if(S.activeTimer) stopTimer(); else startTimer(null); };
