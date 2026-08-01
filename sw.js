@@ -1,25 +1,14 @@
 "use strict";
-/* CFA Personal Coach v6 — service worker.
-   Goal: the app keeps working after the tab is closed and reopened with no network, without
-   ever silently trapping the user on a stale build. Rules that shape everything below:
-     - Never call skipWaiting() automatically. A new version installs and WAITS; the user only
-       gets moved onto it when they press "التحقق من وجود تحديث" and confirm — see app.js's
-       checkForUpdate(). No surprise reloads, no silently-stuck-on-old-code either.
-     - HTML is always network-first (so a user who IS online always gets the latest app shell),
-       falling back to the cache only when the network is unavailable — that's what makes
-       "works offline after first load" true without also making "always shows day-old UI when
-       online" true.
-     - Static assets (css/js/icons) are cache-first with a background revalidate, since they're
-       already version-querystringed (?v=6.0.0) from index.html — a real version bump changes
-       that querystring, which is effectively a new URL, so there's no staleness risk there.
-     - Cross-origin requests (fonts, gstatic Firebase SDK, Firestore) are never intercepted —
-       this worker only ever caches this app's own files. */
-const CACHE_NAME = "cfa-coach-v6.0.0";
+/* Simple CFA Study Tracker v7 — service worker.
+   Keeps the app usable offline after the first load. HTML is network-first so an online
+   user always gets the latest build; static assets are cache-first with revalidate since
+   they're version-querystringed from index.html. Cross-origin requests (fonts) are never
+   intercepted — this worker only ever caches this app's own files. */
+const CACHE_NAME = "cfa-tracker-v7.0.0";
 const CORE_ASSETS = [
   "./", "./index.html", "./manifest.json",
-  "./assets/css/app.css?v=6.0.0",
-  "./assets/js/readiness.js?v=6.0.0",
-  "./assets/js/app.js?v=6.0.0",
+  "./assets/css/app.css?v=7.0.0",
+  "./assets/js/app.js?v=7.0.0",
   "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"
 ];
 
