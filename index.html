@@ -6,9 +6,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="CFA L2">
+<meta name="apple-mobile-web-app-title" content="CFA v7">
 <meta name="format-detection" content="telephone=no">
-<title>لوحة متابعة CFA — المستوى الثاني</title>
+<title>Simple CFA Study Tracker v7</title>
 <meta name="author" content="Othman Abdullah">
 <meta name="theme-color" content="#0E1621">
 <link rel="manifest" href="manifest.json">
@@ -17,260 +17,86 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/app.css?v=6.0.0">
+<link rel="stylesheet" href="assets/css/app.css?v=7.0.0">
 </head>
 <body>
-<div class="ios-banner" id="iosBanner">
-  <b>تنبيه للآيباد:</b> لا تستخدم معاينة تطبيق «الملفات» لتسجيل تقدمك؛ افتح اللوحة من Safari عبر رابط مستضاف حتى يعمل الحفظ بثبات.
-  <button type="button" id="iosBannerClose">فهمت</button>
-</div>
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">المحاولة الثانية · ركّز على ما يهم، لا على إعادة كل شيء</div>
-    <div class="title-row">
-      <h1>لوحة متابعة الـ CFA
-        <small>المستوى الثاني — ٤٥ وحدة دراسية، كل واحدة بحجمها بالساعات</small>
-      </h1>
-      <div class="exam-chip" title="نافذة المستوى الثاني: 18–22 نوفمبر 2026 — اختر يومك المحدد">
-        <div class="d mono" id="examDays">—</div>
-        <div class="lab">
-          <b>يوماً على اختبارك</b>
-          <input type="date" id="examDateTop" class="exam-date-in">
-          <div class="exam-hint" id="examHint"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="hero">
-      <div class="pace-main">
-        <div class="pace-num"><span class="v mono" id="paceVal">—</span><span class="u">ساعة / يوم</span></div>
-        <div class="pace-label">المعدل المطلوب يومياً لإنهاء المحتوى المتبقّي قبل بدء المراجعة. هدفك: <b id="targetEcho">2.0</b> ساعة.</div>
-        <div class="status-chip" id="statusChip"><span class="dot"></span><span id="statusTxt">—</span></div>
-      </div>
-      <div class="metrics">
-        <div class="metric"><div class="v mono" id="mDays">—</div><div class="k">يوم دراسة قبل المراجعة</div></div>
-        <div class="metric"><div class="v mono" id="mDone">—<small> سا</small></div><div class="k">ساعات منجزة (تقديري)</div></div>
-        <div class="metric"><div class="v mono" id="mLeft">—<small> سا</small></div><div class="k">ساعات متبقية</div></div>
-        <div class="metric"><div class="v mono" id="mPct">—<small>%</small></div><div class="k">نسبة الإنجاز (موزونة)</div></div>
-      </div>
-      <div class="bar"><i id="ovBar" style="width:0%"></i></div>
-      <div class="bar-cap"><span>التقدّم العام موزوناً بأوزان الاختبار</span><span class="mono" id="ovTxt">0 / 0 ساعة</span></div>
-      <div class="phase" id="phase"></div>
+    <h1>Simple CFA Study Tracker <span>v7</span></h1>
+    <div class="exam-row">
+      <label class="exam-lab">تاريخ الاختبار
+        <input type="date" id="examDateIn">
+      </label>
+      <div class="exam-days"><b class="mono" id="examDaysVal">—</b><span>يوماً متبقياً</span></div>
     </div>
   </header>
 
-  <section class="sec">
-    <div class="duo">
-      <div class="ready-card" style="margin:0">
-        <div class="gauge">
-          <svg viewBox="0 0 120 66">
-            <path d="M8 62 A52 52 0 0 1 112 62" fill="none" stroke="#1f2b3a" stroke-width="9" stroke-linecap="round"/>
-            <path id="gaugeArc" d="M8 62 A52 52 0 0 1 112 62" pathLength="100" fill="none" stroke="var(--gold)" stroke-width="9"
-                  stroke-linecap="round" stroke-dasharray="100" stroke-dashoffset="100" style="transition:stroke-dashoffset .6s, stroke .4s"/>
-            <line id="gaugeMark" x1="60" y1="14" x2="60" y2="6" stroke="#677A8E" stroke-width="2"/>
-          </svg>
-          <div class="gv"><b class="mono" id="readyVal">0</b><small>من 100</small></div>
-        </div>
-        <div class="ready-txt">
-          <h3>جاهزيتك للاختبار</h3>
-          <p>مقياس بالأدلة: المحتوى والمراحل ٢٥ نقطة، الإتقان والاحتفاظ ١٥، بنك الأسئلة على مستوى القراءة ٢٥، إغلاق الأخطاء ونقاط الضعف ١٥، والمحاكيات ٢٠. إنهاء المنهج وحده أو التخمين الصحيح لا يعطيان جاهزية كاملة. العتبة المريحة ≈ ٧٠.</p>
-          <div class="ready-breakdown" id="readyBreakdown"></div>
-          <span class="ready-band" id="readyBand">—</span>
-        </div>
+  <section class="summary">
+    <div class="sum-grid">
+      <div class="sum-card">
+        <div class="sum-v mono"><span id="progressPctVal">0</span><small>%</small></div>
+        <div class="sum-k">نسبة التقدم العامة</div>
       </div>
-      <div class="card ins">
-        <h3>توجيه المدرّب</h3>
-        <div class="sub">قراءة آلية لأرقامك — تتحدّث مع كل تعديل تسويه</div>
-        <div id="insList"></div>
+      <div class="sum-card">
+        <div class="sum-v mono"><span id="readingsDoneVal">0</span><small>/<span id="readingsTotalVal">0</span></small></div>
+        <div class="sum-k">قراءات مكتملة</div>
       </div>
+      <div class="sum-card">
+        <div class="sum-v mono"><span id="hoursTotalVal">0</span><small> سا</small></div>
+        <div class="sum-k">إجمالي الساعات المسجّلة</div>
+      </div>
+      <div class="sum-card">
+        <div class="sum-v mono"><span id="qTotalVal">0</span></div>
+        <div class="sum-k">إجمالي الأسئلة المحلولة</div>
+      </div>
+      <div class="sum-card">
+        <div class="sum-v mono"><span id="qAccVal">—</span></div>
+        <div class="sum-k">الدقة العامة</div>
+      </div>
+    </div>
+    <div class="bar"><i id="progressBar" style="width:0%"></i></div>
+  </section>
+
+  <section class="sec timer-sec">
+    <div class="timer-box">
+      <select id="timerReadingSel"></select>
+      <span class="timer-disp mono" id="timerDisp">00:00</span>
+      <button class="timer-btn" id="timerBtn">▶ ابدأ</button>
     </div>
   </section>
 
-  <section class="sec">
-    <div class="sec-head"><h2>اليوم</h2><p>افتحها الصبح، شغّل المؤقّت، واتبع الخطة. ساعاتك تترجم لتقدّم تلقائي.</p></div>
-    <div class="today">
-      <div class="today-top">
-        <div class="timer-box">
-          <span class="timer-disp" id="timerDisp">00:00</span>
-          <button class="timer-btn" id="timerBtn">▶ ابدأ جلسة</button>
-          <button class="timer-btn" id="pauseBtn" hidden>⏸ إيقاف مؤقت</button>
-        </div>
-        <span class="timer-focus" id="timerFocus"></span>
-        <div class="today-streak"><div class="v mono" id="streakVal">0</div><div class="k">أيام متتالية</div></div>
-      </div>
-
-      <div class="plan">
-        <div class="plan-h">
-          <h3>خطة اليوم</h3>
-          <span class="budget mono" id="planBudget">~2.0سا</span>
-          <button class="nowbtn" id="nowBtn" hidden></button>
-          <button class="reroll" id="reroll">اقترح غيرها</button>
-        </div>
-        <div id="planList"></div>
-      </div>
-
-      <div class="today-foot">
-        <span class="lab">سجّل يدوياً:</span>
-        <div class="log-in">
-          <input type="number" id="todayHrs" min="0" max="16" step="0.5" placeholder="0">
-          <button id="logBtn">حفظ ساعات اليوم</button>
-        </div>
-        <button class="restbtn" id="restBtn">يوم راحة مخطط</button>
-        <div class="streak" style="margin-inline-start:auto;display:flex;align-items:center;gap:10px">
-          <span class="lab">آخر ١٤ يوم</span><div class="dots" id="dots"></div>
-        </div>
-      </div>
+  <section class="sec mock-sec">
+    <h2>الاختبارات التجريبية</h2>
+    <div class="mock-form">
+      <input type="date" id="mkDate" value="">
+      <input type="text" id="mkName" placeholder="اسم الاختبار">
+      <input type="number" id="mkScore" min="0" max="100" step="0.5" placeholder="النتيجة %">
+      <input type="text" id="mkNote" placeholder="ملاحظة (اختياري)">
+      <button id="mockAddBtn">حفظ</button>
     </div>
+    <div id="mockList"></div>
   </section>
 
-  <section class="sec">
+  <section class="sec readings-sec">
     <div class="sec-head">
-      <h2>خريطة المواضيع</h2>
-      <p>كل مربّع موضوع — يمتلئ مع تقدّمك، ولونه يعكس إتقانك. المضيء بالأحمر: وزن عالٍ وما زلت ضعيفاً فيه.</p>
+      <h2>القراءات</h2>
+      <input type="search" id="searchIn" placeholder="ابحث في القراءات…" aria-label="بحث">
     </div>
-    <p class="curriculum-note">منهج CFA Level II 2026: عدد 42 قراءة رسمية، مقسمة في اللوحة إلى 45 وحدة متابعة لتسهيل التتبّع.</p>
-    <div class="heat" id="heat"></div>
-    <div class="legend">
-      <span><i style="background:var(--todo)"></i>لم تبدأ</span>
-      <span><i style="background:var(--weak)"></i>ضعيف</span>
-      <span><i style="background:var(--mid)"></i>متوسط</span>
-      <span><i style="background:var(--strong)"></i>قوي</span>
-      <span><i style="background:rgba(216,106,75,.5);box-shadow:0 0 0 1px var(--bad)"></i>منطقة خطر (وزن عالٍ + ضعف)</span>
-    </div>
-  </section>
-
-  <section class="sec">
-    <div class="sec-head"><h2>الأداء</h2><p>الساعات وحدها تكذب أحياناً — الدقة والاختبارات التجريبية هي مقياس الحقيقة.</p></div>
-    <div class="card perf">
-      <div class="ptabs" id="ptabs">
-        <button data-p="hrs" class="on">الساعات</button>
-        <button data-p="qb">بنك الأسئلة</button>
-        <button data-p="mock">الاختبارات التجريبية</button>
-        <button class="rep" id="repBtn" title="ينسخ ملخصاً أسبوعياً جاهزاً للمشاركة">📋 تقرير الأسبوع</button>
-      </div>
-      <div id="perfBody"></div>
-    </div>
-  </section>
-
-  <section class="sec" id="errSec">
-    <div class="sec-head">
-      <h2>دفتر الأخطاء</h2>
-      <p>كل سؤال أخطأت فيه أو تخمّنته أو أبطأت فيه — يُسجَّل هنا ليتحوّل من إحباط إلى تدريب محدّد.</p>
-    </div>
-    <div class="card" id="errCard"></div>
-  </section>
-
-  <section class="sec" id="weakSec">
-    <div class="sec-head">
-      <h2>نقاط ضعفي</h2>
-      <p>مستخرجة تلقائياً من أخطائك وأدائك — لا من شعورك.</p>
-    </div>
-    <div class="card" id="weakCard"></div>
-  </section>
-
-  <section class="sec">
-    <div class="sec-head" style="margin-bottom:16px">
-      <div class="tabs" id="tabs">
-        <button class="tab on" data-f="all">كل المواضيع<span class="n" id="cAll"></span></button>
-        <button class="tab" data-f="weak">نقاط الضعف<span class="n" id="cWeak"></span></button>
-        <button class="tab" data-f="todo">غير المكتمل<span class="n" id="cTodo"></span></button>
-      </div>
-      <input class="srch" id="srch" type="search" placeholder="ابحث في القراءات…" aria-label="بحث في القراءات">
-      <p style="max-width:none"><a href="#" id="expandAll" style="color:var(--gold);text-decoration:none">توسيع الكل</a></p>
-    </div>
-    <div id="topics"></div>
-  </section>
-
-  <section class="sec">
-    <div class="sec-head">
-      <h2>المحاكاة والمتانة</h2>
-      <p>على اليمين: ماذا يحصل لو غيّرت وتيرتك. على اليسار: ما أنهيته وبدأ يتآكل.</p>
-    </div>
-    <div class="duo">
-      <div class="card sim" id="simCard"></div>
-      <div class="card decay" id="decayCard"></div>
-    </div>
+    <div id="readingsHost"></div>
   </section>
 
   <div class="tools">
-    <div class="settings">
-      <label>هدف يومي<input type="number" id="setTarget" min="0.5" max="10" step="0.5"></label>
-      <label>أيام المراجعة المحجوزة<input type="number" id="setBuffer" min="0" max="60" step="1"></label>
-      <label>هدف بنك الأسئلة<input type="number" id="setQGoal" min="100" max="10000" step="50"></label>
-    </div>
     <button class="grow" id="exportBtn">تصدير نسخة احتياطية</button>
-    <button id="copyBtn">نسخ للحافظة</button>
-    <button id="coachCtxBtn" title="ملخص Markdown كامل لحالتك جاهز للصق في ChatGPT">نسخ Coach Context</button>
-    <button id="importBtn">استيراد (استبدال)</button>
-    <button id="mergeBtn">استيراد ودمج</button>
-    <input type="file" id="mergeFile" accept="application/json" hidden>
-    <button id="backupsBtn">نسخ أسبوعية محفوظة</button>
-    <button id="syncBtn" hidden>ربط ملف مزامنة</button>
-    <span class="sync-state" id="syncState"></span>
+    <button id="importBtn">استيراد نسخة احتياطية</button>
     <input type="file" id="importFile" accept="application/json" hidden>
-    <button class="danger" id="resetBtn">إعادة الضبط</button>
   </div>
 
-  <section class="sec" id="cloudSec" hidden>
-    <div class="sec-head">
-      <h2>مزامنة السحابة (Firebase)</h2>
-      <p>محلي أولاً دائماً — السحابة نسخة إضافية بين أجهزتك، لا تستبدل التخزين المحلي.</p>
-    </div>
-    <div class="card cloud-card" id="cloudCard"></div>
-  </section>
-
-  <details class="guide">
-    <summary>دليل سريع — كيف تستفيد من اللوحة</summary>
-    <ul>
-      <li>اضبط تاريخ اختبارك وهدفك اليومي وأيام المراجعة — كل الحسابات تتبعها تلقائياً.</li>
-      <li>لكل قراءة: حدّث الحالة والإتقان بالضغط عليها؛ الجاهزية والخريطة و«خطة اليوم» تتحدّث فوراً.</li>
-      <li>شغّل المؤقّت من خطة اليوم — وقتك يُسجّل تلقائياً في ساعات اليوم وسلسلتك، ويُحتسب وقتاً فعلياً على القراءة نفسها.</li>
-      <li>خطة اليوم على كيفك: × تستبعد أي جلسة مقترحة لليوم، و«+ أضف جلسة على كيفك» تختار بها القراءة والمدة بنفسك — والباقي يُبنى تلقائياً حول اختياراتك.</li>
-      <li>سجّل أسئلة التدريب واختباراتك التجريبية في قسم «الأداء» — الدقة تكشف نقاط ضعفك الحقيقية، لا شعورك.</li>
-      <li>زر «راجعت ✓» على المراجعات المستحقة يعيد جدولتها تلقائياً (7 ← 21 ← 45 ← 90 يوم).</li>
-      <li>صدّر نسخة احتياطية JSON مرة كل أسبوع؛ وتقدر تنقلها بين أجهزتك عبر «استيراد» عند الحاجة. اللوحة أيضاً تاخذ لقطة تلقائية كل أسبوع داخل المتصفح — راجعها أو استعدها من «نسخ أسبوعية محفوظة».</li>
-      <li>شريط البحث فوق المواضيع يوصلك لأي قراءة فوراً، وزر «تقرير الأسبوع» في قسم الأداء ينسخ ملخصاً جاهزاً للمشاركة أو الأرشفة.</li>
-      <li><b>⌘K</b> يفتح لوحة الأوامر: اكتب اسم أي قراءة أو موضوع للقفز إليه، أو <b>⇧⏎</b> لبدء جلسة عليه مباشرة. <b>/</b> للبحث، <b>T</b> لتشغيل/إيقاف المؤقّت، <b>؟</b> لهذا الدليل.</li>
-      <li>«محاكاة الوتيرة» تجيب على سؤال واحد: كم تتغيّر جاهزيتك يوم الاختبار لو ذاكرت ساعة أكثر أو أقل يومياً — قبل ما تلتزم بالساعة.</li>
-      <li>«متانة ما أنهيته» تقدّر كم بقي في ذاكرتك من كل قراءة أنهيتها بناءً على المدة منذ آخر مراجعة. الأقل نسبة = أرخص درجة تكسبها اليوم.</li>
-      <li>«يوم راحة مخطط» يحمي سلسلتك في اليوم الذي تقرّر فيه التوقّف عمداً — الراحة المخططة ليست انقطاعاً.</li>
-      <li>للتنقّل بين MacBook وiMac: «استيراد ودمج» يجمع تقدّم الجهازين بدل ما يستبدل أحدهما. وفي Chrome/Edge يظهر زر «ربط ملف مزامنة» — اربطه بملف JSON داخل iCloud Drive وسيُحفظ تلقائياً بعد كل تعديل.</li>
-    </ul>
-  </details>
-
-  <p class="note" id="note"></p>
-
-  <div class="ver-row">
-    <span class="ver-tag" id="verTag">v6.0.0</span>
-    <button id="checkUpdateBtn">التحقق من وجود تحديث</button>
-  </div>
+  <div class="ver-row"><span class="ver-tag">v7.0.0</span></div>
 
 </div>
-<div class="cfw" id="cfw" aria-hidden="true"></div>
-<div class="cmdk" id="backupModal">
-  <div class="cmdk-box">
-    <div style="padding:14px 17px;border-bottom:1px solid var(--line);font-size:13.5px;color:var(--dim)">
-      لقطة تلقائية كل أسبوع من بياناتك — محفوظة داخل هذا المتصفح فقط. استعادة نسخة تستبدل تقدّمك الحالي.
-    </div>
-    <div class="cmdk-list" id="backupList"></div>
-  </div>
-</div>
-<div class="cmdk" id="cmdk">
-  <div class="cmdk-box">
-    <input id="cmdkIn" type="text" placeholder="اقفز لأي قراءة أو موضوع، أو نفّذ أمراً…" autocomplete="off">
-    <div class="cmdk-list" id="cmdkList"></div>
-    <div class="cmdk-foot">
-      <span><b>↑↓</b> تنقّل</span><span><b>⏎</b> فتح</span>
-      <span><b>⇧⏎</b> ابدأ جلسة على القراءة</span><span><b>esc</b> إغلاق</span>
-    </div>
-  </div>
-</div>
-<div id="undoPill"><span></span><button type="button">تراجع</button></div>
 <div id="savedPill">✓ حُفظ</div>
 
-<script src="assets/js/readiness.js?v=6.0.0" defer></script>
-<script src="assets/js/app.js?v=6.0.0" defer></script>
-<script type="module" src="assets/js/firebase-sync.js?v=6.0.0"></script>
+<script src="assets/js/app.js?v=7.0.0" defer></script>
 </body>
 </html>

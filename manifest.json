@@ -1,6 +1,6 @@
 {
-  "name": "لوحة متابعة CFA — المستوى الثاني",
-  "short_name": "CFA L2",
+  "name": "Simple CFA Study Tracker v7",
+  "short_name": "CFA v7",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0E1621",
