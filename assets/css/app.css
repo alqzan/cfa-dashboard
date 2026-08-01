@@ -74,6 +74,9 @@ h1 span{color:var(--gold);font-weight:700;font-size:.7em}
   background:var(--gold);color:#1a1409;border:none;border-radius:9px;padding:12px 22px;
   font-weight:700;cursor:pointer;min-height:48px;
 }
+.timer-btn:disabled{
+  opacity:.45;cursor:not-allowed;filter:saturate(.55);
+}
 .timer-btn:active{transform:scale(.98)}
 
 /* ---------- inputs / buttons shared ---------- */

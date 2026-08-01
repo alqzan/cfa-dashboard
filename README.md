@@ -1,4 +1,4 @@
-# Simple CFA Study Tracker — v7
+# Simple CFA Study Tracker — v7.1
 
 لوحة بسيطة جداً لتتبّع مذاكرة منهج CFA Level II 2026، ثابتة بالكامل (Static)، بدون أي backend
 وبدون تخزين سحابي — تخزين محلي فقط (localStorage) على جهازك. تفتحها، تختار قراءتك بنفسك، تسجّل
@@ -27,6 +27,12 @@ tests/*.test.mjs                    اختبارات آلية (Node، بدون �
 .github/workflows/deploy-pages.yml  نشر GitHub Pages تلقائي + يدوي
 backup/v5-snapshot/                 نسخة كاملة من index.html كما كانت قبل v6 (تاريخية)
 ```
+
+## تحسينات v7.1
+
+- لا يبدأ المؤقت إلا بعد اختيار القراءة يدوياً، وتُسجّل الجلسة تحت القراءة المختارة.
+- تُحفظ الملاحظات على كل ضغطة مع flush آمن عند blur وvisibilitychange وpagehide.
+- الاستيراد يتحقق من JSON وبنية v6/v7، ويحفظ نسخة تلقائية قبل الاستبدال، ولا يغيّر البيانات عند الفشل.
 
 ## تشغيل الاختبارات
 

@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_VERSION = "7.0.0";
+const APP_VERSION = "7.1.0";
 
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ----------
    Same storage key as v5/v6 on purpose: this is what makes existing users' data load
@@ -32,11 +32,80 @@ const store = {
    JSON is stashed here once. Nothing else in v7 reads or writes this key — it exists
    purely so a v6 snapshot can be recovered by hand if anything ever looks wrong. */
 const PRE_MIGRATION_KEY = "cfa_l2_dash_pre_v7_backup";
+const IMPORT_BACKUP_KEY = "cfa_l2_dash_pre_import_backup";
 function savePreMigrationBackup(raw){
   try{
     if(localStorage.getItem(PRE_MIGRATION_KEY)) return; /* keep the first one only */
     localStorage.setItem(PRE_MIGRATION_KEY, JSON.stringify({ ts: Date.now(), data: raw }));
   }catch(e){}
+}
+
+/* ---------- import safety ----------
+   Import is intentionally stricter than the migration itself: migration may mutate its
+   argument, so callers must validate and clone a file before it can replace live state. */
+function isRecord(value){
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function validateImportData(o){
+  if(!isRecord(o)) return {ok:false, message:"ملف JSON غير صالح: يجب أن يحتوي على كائن بيانات."};
+
+  const versions=[o.v,o.schemaVersion].filter(v=>v!==undefined && v!==null);
+  if(versions.some(v=>!Number.isInteger(v) || v<1 || v>7)){
+    return {ok:false, message:"نسخة البيانات غير مدعومة. استخدم ملف v6 أو v7."};
+  }
+  if(!Array.isArray(o.topics) || o.topics.length!==DEFAULT.topics.length){
+    return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: بنية القراءات غير مكتملة."};
+  }
+
+  let readingCount=0;
+  for(const topic of o.topics){
+    if(!isRecord(topic) || typeof topic.id!=="string" || !Array.isArray(topic.r)){
+      return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: بيانات أحد الأقسام تالفة."};
+    }
+    for(const reading of topic.r){
+      if(!isRecord(reading) || typeof reading.id!=="string" || !reading.id.trim()){
+        return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: بيانات إحدى القراءات تالفة."};
+      }
+      if(["ar","en","note"].some(key=>reading[key]!==undefined && reading[key]!==null && typeof reading[key]!=="string")){
+        return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: نص إحدى القراءات غير صالح."};
+      }
+      const numericFields=["hrs","spent","weight","qGoal","qSolved","qCorrect","excludedFraction"];
+      if(numericFields.some(key=>reading[key]!==undefined && reading[key]!==null &&
+        (typeof reading[key]!=="number" || !Number.isFinite(reading[key])))){
+        return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: قيمة رقمية غير صالحة."};
+      }
+      readingCount++;
+    }
+  }
+  if(readingCount<45){
+    return {ok:false, message:"ملف النسخة الاحتياطية غير مكتمل: يلزم وجود الوحدات الدراسية الـ45."};
+  }
+
+  const objectFields=["dailyLog","reviews","practice","restDays","celebrated"];
+  if(objectFields.some(key=>o[key]!==undefined && !isRecord(o[key]))){
+    return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: سجل البيانات غير صالح."};
+  }
+  const arrayFields=["mocks","sessions","errors","weaknesses","syncConflicts"];
+  if(arrayFields.some(key=>o[key]!==undefined && !Array.isArray(o[key]))){
+    return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: سجل الاختبارات أو الجلسات غير صالح."};
+  }
+  if(o.activeTimer!==undefined && o.activeTimer!==null && !isRecord(o.activeTimer)){
+    return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: بيانات المؤقت غير صالحة."};
+  }
+  return {ok:true, message:""};
+}
+
+async function saveImportBackup(current){
+  let payload;
+  try{
+    payload=JSON.stringify({ts:Date.now(), appVersion:APP_VERSION, data:JSON.parse(JSON.stringify(current))});
+  }catch(e){ return false; }
+  let ok=false;
+  try{ localStorage.setItem(IMPORT_BACKUP_KEY,payload); ok=true; }catch(e){}
+  if(typeof window!=="undefined" && window.storage && window.storage.set){
+    try{ await window.storage.set(IMPORT_BACKUP_KEY,payload); ok=true; }catch(e){}
+  }
+  return ok;
 }
 
 /* ---------- default curriculum (2026, 45 modules) ----------
@@ -273,10 +342,24 @@ function migrate(o){
 let S = null;
 
 let saveT = null;
+let saveQueue = Promise.resolve();
+function persistState(state, showSaved){
+  if(!state) return Promise.resolve(false);
+  let snapshot;
+  try{ snapshot=JSON.parse(JSON.stringify(state)); }catch(e){ return Promise.resolve(false); }
+  const write=saveQueue.catch(()=>false).then(()=>store.write(snapshot));
+  saveQueue=write;
+  return write.then(ok=>{ if(ok && showSaved) flashSaved(); return ok; }, ()=>false);
+}
 function save(){
   if(S) S.lastLocalChangeAt = Date.now();
   clearTimeout(saveT);
-  saveT = setTimeout(async ()=>{ const ok = await store.write(S); if(ok) flashSaved(); }, 300);
+  saveT = setTimeout(()=>{ saveT=null; persistState(S,true); }, 300);
+}
+function flushSave(){
+  clearTimeout(saveT);
+  saveT=null;
+  return persistState(S,false);
 }
 
 /* ---------- helpers ---------- */
@@ -416,17 +499,24 @@ function updateTimerUI(){
   if(S.activeTimer){
     disp.textContent = fmtClock(timerSec());
     btn.textContent = "■ إيقاف وتسجيل";
+    btn.disabled = false;
     sel.disabled = true;
     if(!timerTick) timerTick=setInterval(()=>{ if(S.activeTimer && !S.activeTimer.pausedAt) disp.textContent=fmtClock(timerSec()); },1000);
   } else {
     disp.textContent = "00:00";
     btn.textContent = "▶ ابدأ";
+    btn.disabled = !(sel.value && findReading(sel.value));
     sel.disabled = false;
     if(timerTick){ clearInterval(timerTick); timerTick=null; }
   }
 }
 function startTimer(){
-  const id = $("#timerReadingSel").value || null;
+  const id = $("#timerReadingSel").value;
+  if(!id || !findReading(id)){
+    toast("اختر قراءة يدوياً أولاً لبدء المؤقت", true);
+    updateTimerUI();
+    return;
+  }
   S.activeTimer = {start:Date.now(), readingId:id, accum:0, pausedAt:null, dayKey:todayKey()};
   save(); updateTimerUI();
 }
@@ -532,11 +622,13 @@ function readingCard(t,r){
   const noteArea=document.createElement("textarea"); noteArea.className="r-note"; noteArea.rows=2;
   noteArea.placeholder="اكتب ملاحظتك هنا مباشرة…";
   noteArea.value=r.note||"";
-  let noteT=null;
   noteArea.addEventListener("input",()=>{
-    clearTimeout(noteT);
-    noteT=setTimeout(()=>{ r.note=noteArea.value; save(); },400);
+    /* Update the live state on every keystroke. The persistence debounce is now
+       safe because blur/pagehide/visibilitychange can flush this exact value. */
+    r.note=noteArea.value;
+    save();
   });
+  noteArea.addEventListener("blur",flushSave);
   noteWrap.appendChild(noteArea);
   card.appendChild(noteWrap);
 
@@ -603,6 +695,7 @@ function renderAll(){
 /* ---------- wire up static controls ---------- */
 $("#examDateIn").onchange=e=>{ if(e.target.value){ S.examDate=e.target.value; save(); renderSummary(); } };
 $("#searchIn").oninput=e=>{ QUERY=norm(e.target.value.trim()); renderReadings(); };
+$("#timerReadingSel").onchange=()=>updateTimerUI();
 $("#timerBtn").onclick=()=>{ if(S.activeTimer) stopTimer(); else startTimer(); };
 
 $("#mockAddBtn").onclick=()=>{
@@ -632,21 +725,48 @@ $("#exportBtn").onclick=async ()=>{
   }
 };
 $("#importBtn").onclick=()=>armConfirm($("#importBtn"), ()=>$("#importFile").click());
-$("#importFile").onchange=e=>{
+$("#importFile").onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
   const rd=new FileReader();
-  rd.onload=()=>{
+  rd.onload=async ()=>{
+    let parsed;
     try{
-      const o=JSON.parse(rd.result);
-      if(o && o.topics){
-        S = migrate(o);
-        save();
-        renderAll();
-        toast("تم استيراد النسخة الاحتياطية");
-      } else {
-        toast("ملف غير صالح", true);
-      }
-    }catch(err){ toast("تعذّر قراءة الملف", true); }
+      parsed=JSON.parse(rd.result);
+    }catch(err){
+      toast("تعذّر قراءة ملف JSON: الملف تالف ولم تتغير بياناتك", true);
+      return;
+    }
+    const shape=validateImportData(parsed);
+    if(!shape.ok){
+      toast(shape.message+" لم تتغير بياناتك", true);
+      return;
+    }
+    let candidate;
+    try{
+      candidate=migrate(JSON.parse(JSON.stringify(parsed)));
+      const migratedShape=validateImportData(candidate);
+      if(!migratedShape.ok) throw new Error(migratedShape.message);
+      candidate.lastLocalChangeAt=Date.now();
+    }catch(err){
+      console.error("Import migration failed — keeping existing data untouched", err);
+      toast("تعذّرت ترقية النسخة الاحتياطية؛ لم تتغير بياناتك", true);
+      return;
+    }
+    const backupCreated=await saveImportBackup(S);
+    if(!backupCreated){
+      toast("تعذّر إنشاء النسخة الاحتياطية التلقائية؛ لم تتغير بياناتك", true);
+      return;
+    }
+    clearTimeout(saveT);
+    saveT=null;
+    const persisted=await persistState(candidate,false);
+    if(!persisted){
+      toast("تعذّر حفظ البيانات المستوردة؛ لم تتغير بياناتك", true);
+      return;
+    }
+    S=candidate;
+    renderAll();
+    toast("تم استيراد النسخة الاحتياطية بنجاح");
   };
   rd.readAsText(f);
   e.target.value="";
@@ -684,12 +804,14 @@ $("#importFile").onchange=e=>{
     }
   }
   renderAll();
-  const persisted=await store.write(S);
+  const persisted=await persistState(S,false);
   if(!persisted){
     toast("الحفظ الدائم غير متاح في هذا المتصفح", true);
   }
 })();
-document.addEventListener("visibilitychange",()=>{ if(document.hidden && S){ store.write(S); } });
+document.addEventListener("visibilitychange",()=>{ if(document.hidden && S){ flushSave(); } });
+window.addEventListener("blur",()=>{ if(S){ flushSave(); } });
+window.addEventListener("pagehide",()=>{ if(S){ flushSave(); } });
 
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("./sw.js").catch(()=>{});

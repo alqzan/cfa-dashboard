@@ -1,0 +1,87 @@
+{
+  "v": 7,
+  "schemaVersion": 7,
+  "examDate": "2026-11-19",
+  "dailyLog": { "2026-08-01": 2.5 },
+  "reviews": {},
+  "activeTimer": null,
+  "practice": { "2026-08-01": { "eth": { "a": 20, "c": 15 } } },
+  "mocks": [
+    { "id": "mock-fixture-1", "date": "2026-08-01", "name": "اختبار الاستيراد", "score": 78.5, "note": "بيانات اختبار" }
+  ],
+  "sessions": [
+    { "d": "2026-08-01", "m": 45, "id": "eth-0", "h": null }
+  ],
+  "qGoal": 2000,
+  "lastExport": null,
+  "celebrated": {},
+  "planCfg": null,
+  "restDays": {},
+  "topics": [
+    { "id": "eth", "r": [
+      { "id": "eth-0", "ar": "قراءة اختبارية", "en": "Fixture Reading", "hrs": 8, "status": "todo", "mastery": "none", "note": "استيراد ناجح — آخر حرف!", "spent": 2.5, "qGoal": 250, "qSolved": 123, "qCorrect": 97 },
+      { "id": "eth-1", "ar": "", "en": "Ethics 2", "hrs": 8, "status": "todo", "mastery": "none", "note": "", "spent": 0 },
+      { "id": "eth-2", "ar": "", "en": "Ethics 3", "hrs": 8, "status": "todo", "mastery": "none", "note": "", "spent": 0 }
+    ] },
+    { "id": "fsa", "r": [
+      { "id": "fsa-0", "en": "FSA 1", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "fsa-1", "en": "FSA 2", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "fsa-2", "en": "FSA 3", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "fsa-3", "en": "FSA 4", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "fsa-4", "en": "FSA 5", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "fsa-5", "en": "FSA 6", "hrs": 8, "status": "todo", "note": "", "spent": 0 }
+    ] },
+    { "id": "eq", "r": [
+      { "id": "eq-0", "en": "Equity 1", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "eq-1", "en": "Equity 2", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "eq-2", "en": "Equity 3", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "eq-3", "en": "Equity 4", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "eq-4", "en": "Equity 5", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "eq-5", "en": "Equity 6", "hrs": 8, "status": "todo", "note": "", "spent": 0 }
+    ] },
+    { "id": "fi", "r": [
+      { "id": "fi-0", "en": "Fixed Income 1", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "fi-1", "en": "Fixed Income 2", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "fi-2", "en": "Fixed Income 3", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "fi-3", "en": "Fixed Income 4", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "fi-4", "en": "Fixed Income 5", "hrs": 8, "status": "todo", "note": "", "spent": 0 }
+    ] },
+    { "id": "pm", "r": [
+      { "id": "pm-0", "en": "Portfolio 1", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "pm-1", "en": "Portfolio 2", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "pm-2", "en": "Portfolio 3", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "pm-3", "en": "Portfolio 4", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "pm-4", "en": "Portfolio 5", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "pm-5", "en": "Portfolio 6", "hrs": 8, "status": "todo", "note": "", "spent": 0 }
+    ] },
+    { "id": "qm", "r": [
+      { "id": "qm-0", "en": "Quant 1", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "qm-1", "en": "Quant 2", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "qm-2", "en": "Quant 3", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "qm-3", "en": "Quant 4", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "qm-4", "en": "Quant 5", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "qm-5", "en": "Quant 6", "hrs": 8, "status": "todo", "spent": 0 },
+      { "id": "qm-6", "en": "Quant 7", "hrs": 8, "status": "todo", "note": "", "spent": 0 }
+    ] },
+    { "id": "eco", "r": [
+      { "id": "eco-0", "en": "Economics 1", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "eco-1", "en": "Economics 2", "hrs": 8, "status": "todo", "note": "", "spent": 0 }
+    ] },
+    { "id": "ci", "r": [
+      { "id": "ci-0", "en": "Corporate 1", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "ci-1", "en": "Corporate 2", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "ci-2", "en": "Corporate 3", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "ci-3", "en": "Corporate 4", "hrs": 8, "status": "todo", "note": "", "spent": 0 }
+    ] },
+    { "id": "der", "r": [
+      { "id": "der-0", "en": "Derivatives 1", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "der-1", "en": "Derivatives 2", "hrs": 8, "status": "todo", "note": "", "spent": 0 }
+    ] },
+    { "id": "ai", "r": [
+      { "id": "ai-0", "en": "Alternative 1", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "ai-1", "en": "Alternative 2", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "ai-2", "en": "Alternative 3", "hrs": 8, "status": "todo", "note": "", "spent": 0 },
+      { "id": "ai-3", "en": "Alternative 4", "hrs": 8, "status": "todo", "note": "", "spent": 0 }
+    ] }
+  ]
+}
