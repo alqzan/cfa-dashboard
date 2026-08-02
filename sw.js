@@ -4,11 +4,11 @@
    user always gets the latest build; static assets are cache-first with revalidate since
    they're version-querystringed from index.html. Cross-origin requests (fonts) are never
    intercepted — this worker only ever caches this app's own files. */
-const CACHE_NAME = "cfa-tracker-v7.1.0";
+const CACHE_NAME = "cfa-tracker-v7.7.0";
 const CORE_ASSETS = [
   "./", "./index.html", "./manifest.json",
-  "./assets/css/app.css?v=7.1.0",
-  "./assets/js/app.js?v=7.1.0",
+  "./assets/css/app.css?v=7.7.0",
+  "./assets/js/app.js?v=7.7.0",
   "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"
 ];
 
