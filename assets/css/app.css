@@ -1,3 +1,18 @@
+/* ---------- Thmanyah Sans ----------
+   Licensed font, not redistributable — no font files ship in this repo or get served
+   by this site. local() only matches a copy already installed on the visitor's own
+   device; everyone else silently falls through to the Tajawal/system stack below. */
+@font-face{font-family:"Thmanyah Sans";font-weight:300;font-style:normal;font-display:swap;
+  src:local("thmanyah sans Light"),local("thmanyahsans-Light");}
+@font-face{font-family:"Thmanyah Sans";font-weight:400;font-style:normal;font-display:swap;
+  src:local("thmanyah sans"),local("thmanyah sans Regular"),local("thmanyahsans-Regular");}
+@font-face{font-family:"Thmanyah Sans";font-weight:500;font-style:normal;font-display:swap;
+  src:local("thmanyah sans Med"),local("thmanyah sans Medium"),local("thmanyahsans-Medium");}
+@font-face{font-family:"Thmanyah Sans";font-weight:700;font-style:normal;font-display:swap;
+  src:local("thmanyah sans Bold"),local("thmanyahsans-Bold");}
+@font-face{font-family:"Thmanyah Sans";font-weight:900;font-style:normal;font-display:swap;
+  src:local("thmanyah sans Black"),local("thmanyahsans-Black");}
+
 :root{
   --bg:#0E1621; --bg2:#0A1017; --surface:#17212E; --surface2:#1F2B3A;
   --line:#283747; --line2:#34465B;
@@ -15,7 +30,7 @@ body{
     radial-gradient(900px 500px at 5% 0%, rgba(84,180,136,.04), transparent 55%),
     var(--bg);
   color:var(--ink);
-  font-family:-apple-system,BlinkMacSystemFont,"SF Arabic","IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;
+  font-family:"Thmanyah Sans",-apple-system,BlinkMacSystemFont,"SF Arabic","IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;
   line-height:1.6; min-height:100vh;
   padding:clamp(14px,3vw,36px);
 }
@@ -25,7 +40,7 @@ button, input, select, textarea{font-family:inherit;font-size:15px}
 
 /* ---------- header ---------- */
 header{margin-bottom:20px}
-h1{font-family:"Tajawal",sans-serif;font-weight:800;font-size:clamp(22px,4vw,30px);letter-spacing:-.01em}
+h1{font-family:"Thmanyah Sans","Tajawal",sans-serif;font-weight:800;font-size:clamp(22px,4vw,30px);letter-spacing:-.01em}
 h1 span{color:var(--gold);font-weight:700;font-size:.7em}
 .exam-row{
   display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:14px;
@@ -57,7 +72,7 @@ h1 span{color:var(--gold);font-weight:700;font-size:.7em}
 
 /* ---------- generic section ---------- */
 .sec{margin-bottom:22px}
-.sec h2{font-family:"Tajawal",sans-serif;font-size:18px;font-weight:700;margin-bottom:12px}
+.sec h2{font-family:"Thmanyah Sans","Tajawal",sans-serif;font-size:18px;font-weight:700;margin-bottom:12px}
 .sec-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px}
 .sec-head h2{margin-bottom:0}
 .empty{color:var(--faint);font-size:13.5px;padding:14px 0}
@@ -132,7 +147,7 @@ button.armed{background:var(--bad);color:#fff;border-color:var(--bad)}
   flex:0 0 auto;font-family:"JetBrains Mono",monospace;font-weight:700;font-size:12px;color:var(--gold);
   background:rgba(199,162,88,.12);border:1px solid rgba(199,162,88,.35);border-radius:7px;padding:3px 8px;
 }
-.tg-name{flex:1;min-width:0;font-family:"Tajawal",sans-serif;font-weight:700;font-size:14.5px;
+.tg-name{flex:1;min-width:0;font-family:"Thmanyah Sans","Tajawal",sans-serif;font-weight:700;font-size:14.5px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tg-progress{flex:0 0 auto;width:64px;height:6px;border-radius:4px;background:var(--bg2);
   border:1px solid var(--line);overflow:hidden}

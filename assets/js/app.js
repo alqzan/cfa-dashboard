@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_VERSION = "7.5.0";
+const APP_VERSION = "7.6.0";
 
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ----------
    Same storage key as v5/v6 on purpose: this is what makes existing users' data load
