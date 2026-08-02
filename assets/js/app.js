@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_VERSION = "7.3.0";
+const APP_VERSION = "7.4.0";
 
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ----------
    Same storage key as v5/v6 on purpose: this is what makes existing users' data load
@@ -204,7 +204,7 @@ function fresh(){
   const s = JSON.parse(JSON.stringify(DEFAULT));
   s.topics.forEach(t=>{
     t.weight = (t.wMin+t.wMax)/2;
-    t.r = t.r.map((x,i)=>({id:t.id+"-"+i, ar:x[0], en:x[1], hrs:x[2], status:"todo", mastery:"none", qMastery:"none", note:"", spent:0}));
+    t.r = t.r.map((x,i)=>({id:t.id+"-"+i, ar:x[0], en:x[1], hrs:x[2], status:"todo", mastery:"none", qMastery:"none", note:"", qNote:"", spent:0}));
   });
   s.v = 1;
   return migrate(s);
@@ -228,6 +228,7 @@ function migrate(o){
     if(t.weight == null) t.weight = (t.wMin+t.wMax)/2;
     t.r.forEach(r=>{
       if(r.note == null) r.note = "";
+      if(r.qNote == null) r.qNote = "";
       if(r.spent == null) r.spent = 0;
       if(r.mastery == null) r.mastery = "none"; /* self-rated understanding of the reading */
       if(r.qMastery == null) r.qMastery = "none"; /* self-rated question-solving performance */
@@ -413,12 +414,6 @@ function readingsTotals(){
   });
   return {doneCount, total, pct: total? doneCount/total*100 : 0};
 }
-function questionTotals(){
-  let a=0,c=0;
-  allReadingsFlat().forEach(({r})=>{ a+=r.qSolved||0; c+=r.qCorrect||0; });
-  for(const d in S.practice){ for(const id in S.practice[d]){ a+=S.practice[d][id].a||0; c+=S.practice[d][id].c||0; } }
-  return {a, c, acc: a? c/a*100 : 0};
-}
 function examDaysLeft(){ return Math.max(0, daysBetweenKeys(todayKey(), S.examDate)); }
 
 /* ---------- toast ---------- */
@@ -465,13 +460,11 @@ function armConfirm(btn, fn){
 function renderSummary(){
   $("#examDateIn").value = S.examDate;
   $("#examDaysVal").textContent = examDaysLeft();
-  const R=readingsTotals(), Q=questionTotals();
+  const R=readingsTotals();
   $("#progressPctVal").textContent = Math.round(R.pct);
   $("#progressBar").style.width = R.pct+"%";
   $("#readingsDoneVal").textContent = R.doneCount;
   $("#readingsTotalVal").textContent = R.total;
-  $("#qTotalVal").textContent = Q.a.toLocaleString("en");
-  $("#qAccVal").textContent = Q.a ? Math.round(Q.acc)+"٪" : "—";
 }
 
 /* ---------- finalize any timer left dangling from before the manual timer was removed ----------
@@ -548,6 +541,23 @@ function ratingGroup(label, getVal, setVal){
   wrap._update=update;
   return wrap;
 }
+function noteField(label, r, key){
+  const wrap=document.createElement("label"); wrap.className="r-notewrap";
+  const lab=document.createElement("span"); lab.textContent=label;
+  wrap.appendChild(lab);
+  const area=document.createElement("textarea"); area.className="r-note"; area.rows=2;
+  area.placeholder="اكتب ملاحظتك هنا مباشرة…";
+  area.value=r[key]||"";
+  area.addEventListener("input",()=>{
+    /* Update the live state on every keystroke. The persistence debounce is now
+       safe because blur/pagehide/visibilitychange can flush this exact value. */
+    r[key]=area.value;
+    save();
+  });
+  area.addEventListener("blur",flushSave);
+  wrap.appendChild(area);
+  return wrap;
+}
 function readingMatchesQuery(t,r){
   if(!QUERY) return true;
   const hay=norm((r.en||"")+" "+(r.ar||"")+" "+(t.en||"")+" "+(t.ar||""));
@@ -589,61 +599,13 @@ function readingCard(t,r,onFlagChange){
     card.appendChild(sub);
   }
 
-  const grid=document.createElement("div"); grid.className="r-grid";
-  function field(label, input){
-    const wrap=document.createElement("label"); wrap.className="r-field";
-    const lab=document.createElement("span"); lab.textContent=label;
-    wrap.appendChild(lab); wrap.appendChild(input);
-    return wrap;
-  }
-  const qGoalIn=document.createElement("input"); qGoalIn.type="number"; qGoalIn.min="0"; qGoalIn.step="1"; qGoalIn.placeholder="—";
-  qGoalIn.value = r.qGoal==null ? "" : r.qGoal;
-  qGoalIn.onchange=()=>{ const v=parseInt(qGoalIn.value,10); r.qGoal = isNaN(v)?null:Math.max(0,v); save(); renderReadings(); };
-  grid.appendChild(field("هدف الأسئلة", qGoalIn));
-
-  const solvedIn=document.createElement("input"); solvedIn.type="number"; solvedIn.min="0"; solvedIn.step="1";
-  solvedIn.value = r.qSolved||0;
-  solvedIn.onchange=()=>{
-    const v=parseInt(solvedIn.value,10); r.qSolved = isNaN(v)?0:Math.max(0,v);
-    if(r.qCorrect>r.qSolved) r.qCorrect=r.qSolved;
-    save(); renderReadings(); renderSummary();
-  };
-  grid.appendChild(field("الأسئلة المحلولة", solvedIn));
-
-  const correctIn=document.createElement("input"); correctIn.type="number"; correctIn.min="0"; correctIn.step="1";
-  correctIn.value = r.qCorrect||0;
-  correctIn.onchange=()=>{
-    const v=parseInt(correctIn.value,10); r.qCorrect = Math.min(r.qSolved||0, isNaN(v)?0:Math.max(0,v));
-    save(); renderReadings(); renderSummary();
-  };
-  grid.appendChild(field("الإجابات الصحيحة", correctIn));
-
-  const remaining = (r.qGoal!=null) ? Math.max(0,(r.qGoal-(r.qSolved||0))) : null;
-  const remWrap=document.createElement("div"); remWrap.className="r-field r-remaining";
-  remWrap.innerHTML='<span>المتبقي من الأسئلة</span><b>'+(remaining==null?"—":remaining.toLocaleString("en"))+'</b>';
-  grid.appendChild(remWrap);
-
-  card.appendChild(grid);
-
   const ratingsRow=document.createElement("div"); ratingsRow.className="r-ratings";
   ratingsRow.appendChild(ratingGroup("تقييم فهمي للقراءة", ()=>r.mastery||"none", v=>{ r.mastery=v; save(); updateFlag(); }));
   ratingsRow.appendChild(ratingGroup("تقييم حلّي للأسئلة", ()=>r.qMastery||"none", v=>{ r.qMastery=v; save(); updateFlag(); }));
   card.appendChild(ratingsRow);
 
-  const noteWrap=document.createElement("label"); noteWrap.className="r-notewrap";
-  noteWrap.innerHTML='<span>ملاحظات</span>';
-  const noteArea=document.createElement("textarea"); noteArea.className="r-note"; noteArea.rows=2;
-  noteArea.placeholder="اكتب ملاحظتك هنا مباشرة…";
-  noteArea.value=r.note||"";
-  noteArea.addEventListener("input",()=>{
-    /* Update the live state on every keystroke. The persistence debounce is now
-       safe because blur/pagehide/visibilitychange can flush this exact value. */
-    r.note=noteArea.value;
-    save();
-  });
-  noteArea.addEventListener("blur",flushSave);
-  noteWrap.appendChild(noteArea);
-  card.appendChild(noteWrap);
+  card.appendChild(noteField("ملاحظات القراءة", r, "note"));
+  card.appendChild(noteField("ملاحظات الأسئلة", r, "qNote"));
 
   return card;
 }
@@ -714,7 +676,7 @@ function renderReadings(){
     addBtn.onclick=()=>{
       t.r.push({
         id:t.id+"-new-"+Date.now(), ar:"", en:"قراءة جديدة", hrs:null, status:"todo", mastery:"none", qMastery:"none",
-        note:"", spent:0, topicId:t.id, readingNo:null, excludedFraction:0, excludedNote:"",
+        note:"", qNote:"", spent:0, topicId:t.id, readingNo:null, excludedFraction:0, excludedNote:"",
         stages:defaultStages(), sourceMap:defaultSourceMap(), pages:{mark:"",schweser:"",cfai:"",secretSauce:""},
         brief:defaultBrief(), readingPractice:[], closeout:{status:"open",closedAt:null},
         qGoal:null, qSolved:0, qCorrect:0
