@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_VERSION = "7.4.0";
+const APP_VERSION = "7.5.0";
 
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ----------
    Same storage key as v5/v6 on purpose: this is what makes existing users' data load
@@ -599,13 +599,19 @@ function readingCard(t,r,onFlagChange){
     card.appendChild(sub);
   }
 
-  const ratingsRow=document.createElement("div"); ratingsRow.className="r-ratings";
-  ratingsRow.appendChild(ratingGroup("تقييم فهمي للقراءة", ()=>r.mastery||"none", v=>{ r.mastery=v; save(); updateFlag(); }));
-  ratingsRow.appendChild(ratingGroup("تقييم حلّي للأسئلة", ()=>r.qMastery||"none", v=>{ r.qMastery=v; save(); updateFlag(); }));
-  card.appendChild(ratingsRow);
+  const pairs=document.createElement("div"); pairs.className="r-pairs";
 
-  card.appendChild(noteField("ملاحظات القراءة", r, "note"));
-  card.appendChild(noteField("ملاحظات الأسئلة", r, "qNote"));
+  const readPair=document.createElement("div"); readPair.className="r-pair";
+  readPair.appendChild(ratingGroup("تقييم فهمي للقراءة", ()=>r.mastery||"none", v=>{ r.mastery=v; save(); updateFlag(); }));
+  readPair.appendChild(noteField("ملاحظات القراءة", r, "note"));
+  pairs.appendChild(readPair);
+
+  const qPair=document.createElement("div"); qPair.className="r-pair";
+  qPair.appendChild(ratingGroup("تقييم حلّي للأسئلة", ()=>r.qMastery||"none", v=>{ r.qMastery=v; save(); updateFlag(); }));
+  qPair.appendChild(noteField("ملاحظات الأسئلة", r, "qNote"));
+  pairs.appendChild(qPair);
+
+  card.appendChild(pairs);
 
   return card;
 }

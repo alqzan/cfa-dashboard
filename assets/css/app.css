@@ -162,7 +162,8 @@ button.armed{background:var(--bad);color:#fff;border-color:var(--bad)}
 .r-name{flex:1;min-width:180px;font-weight:600}
 .r-status{flex:0 0 130px;min-width:120px}
 .r-sub{color:var(--faint);font-size:12.5px;margin-top:6px}
-.r-ratings{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.r-pairs{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px}
+.r-pair{display:flex;flex-direction:column;min-width:0}
 .rate-row{display:flex;gap:6px}
 .rate-btn{
   flex:1;background:var(--bg2);border:1px solid var(--line2);color:var(--dim);
@@ -203,7 +204,7 @@ button.armed{background:var(--bad);color:#fff;border-color:var(--bad)}
   .mock-form{grid-template-columns:1fr}
   .mock-row{grid-template-columns:1fr;gap:2px}
   .exam-days{margin-inline-start:0}
-  .r-ratings{grid-template-columns:1fr}
+  .r-pairs{grid-template-columns:1fr}
   .tg-name{white-space:normal}
   .tg-progress{display:none}
 }
