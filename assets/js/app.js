@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_VERSION = "7.2.0";
+const APP_VERSION = "7.3.0";
 
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ----------
    Same storage key as v5/v6 on purpose: this is what makes existing users' data load
@@ -405,15 +405,13 @@ function allReadingsFlat(){
 }
 function findReading(id){ for(const t of S.topics){ const r=t.r.find(x=>x.id===id); if(r) return {t:t,r:r}; } return null; }
 
-function hoursTotals(){
-  let est=0, spent=0, doneCount=0, total=0;
+function readingsTotals(){
+  let doneCount=0, total=0;
   allReadingsFlat().forEach(({r})=>{
-    est += r.hrs||0;
-    spent += r.spent||0;
     total++;
     if(r.status==="done") doneCount++;
   });
-  return {est, spent, doneCount, total, pct: est>0 ? Math.min(100, spent/est*100) : 0};
+  return {doneCount, total, pct: total? doneCount/total*100 : 0};
 }
 function questionTotals(){
   let a=0,c=0;
@@ -467,76 +465,32 @@ function armConfirm(btn, fn){
 function renderSummary(){
   $("#examDateIn").value = S.examDate;
   $("#examDaysVal").textContent = examDaysLeft();
-  const H=hoursTotals(), Q=questionTotals();
-  $("#progressPctVal").textContent = Math.round(H.pct);
-  $("#progressBar").style.width = H.pct+"%";
-  $("#readingsDoneVal").textContent = H.doneCount;
-  $("#readingsTotalVal").textContent = H.total;
-  $("#hoursTotalVal").textContent = fmt(H.spent);
+  const R=readingsTotals(), Q=questionTotals();
+  $("#progressPctVal").textContent = Math.round(R.pct);
+  $("#progressBar").style.width = R.pct+"%";
+  $("#readingsDoneVal").textContent = R.doneCount;
+  $("#readingsTotalVal").textContent = R.total;
   $("#qTotalVal").textContent = Q.a.toLocaleString("en");
   $("#qAccVal").textContent = Q.a ? Math.round(Q.acc)+"٪" : "—";
 }
 
-/* ---------- render: manual timer ---------- */
-function timerReadingOptions(selected){
-  let out = '<option value="">— اختر القراءة —</option>';
-  S.topics.forEach(t=>{
-    out += '<optgroup label="'+esc(t.en||t.ar)+'">';
-    t.r.forEach(r=>{
-      out += '<option value="'+esc(r.id)+'"'+(r.id===selected?" selected":"")+'>'+esc(r.en||r.ar)+'</option>';
-    });
-    out += '</optgroup>';
-  });
-  return out;
-}
-function timerSec(){
-  const a=S.activeTimer; if(!a) return 0;
-  const base=a.accum||0;
-  return a.pausedAt ? base : base + Math.floor((Date.now()-a.start)/1000);
-}
-function fmtClock(sec){
-  const m=Math.floor(sec/60), s=sec%60;
-  return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
-}
-let timerTick=null;
-function updateTimerUI(){
-  const disp=$("#timerDisp"), btn=$("#timerBtn"), sel=$("#timerReadingSel");
-  if(S.activeTimer){
-    disp.textContent = fmtClock(timerSec());
-    btn.textContent = "■ إيقاف وتسجيل";
-    btn.disabled = false;
-    sel.disabled = true;
-    if(!timerTick) timerTick=setInterval(()=>{ if(S.activeTimer && !S.activeTimer.pausedAt) disp.textContent=fmtClock(timerSec()); },1000);
-  } else {
-    disp.textContent = "00:00";
-    btn.textContent = "▶ ابدأ";
-    btn.disabled = !(sel.value && findReading(sel.value));
-    sel.disabled = false;
-    if(timerTick){ clearInterval(timerTick); timerTick=null; }
-  }
-}
-function startTimer(){
-  const id = $("#timerReadingSel").value;
-  if(!id || !findReading(id)){
-    toast("اختر قراءة يدوياً أولاً لبدء المؤقت", true);
-    updateTimerUI();
-    return;
-  }
-  S.activeTimer = {start:Date.now(), readingId:id, accum:0, pausedAt:null, dayKey:todayKey()};
-  save(); updateTimerUI();
-}
-function stopTimer(){
+/* ---------- finalize any timer left dangling from before the manual timer was removed ----------
+   v7.2 and earlier had a start/stop study timer that wrote to dailyLog/sessions/r.spent.
+   That UI is gone, so on load we just settle whatever was mid-flight into those same
+   fields (never shown anymore, but nothing already recorded there is discarded) and clear it. */
+function finalizeDanglingTimer(){
   const a=S.activeTimer; if(!a) return;
-  const sec=timerSec();
-  const k=a.dayKey||todayKey();
-  if(sec>=30){
-    const hrs=sec/3600;
-    S.dailyLog[k]=(S.dailyLog[k]||0)+hrs;
-    if(a.readingId){ const f=findReading(a.readingId); if(f) f.r.spent=(f.r.spent||0)+hrs; }
-    S.sessions.push({d:k, m:Math.max(1,Math.round(sec/60)), id:a.readingId||null, h:null});
+  const base=a.accum||0;
+  const secs=Math.min(a.pausedAt ? base : base+Math.floor((Date.now()-a.start)/1000), 4*3600);
+  if(secs>=30){
+    const hrs=secs/3600;
+    const dk=a.dayKey||todayKey();
+    S.dailyLog[dk]=(S.dailyLog[dk]||0)+hrs;
+    const f=a.readingId?findReading(a.readingId):null;
+    if(f) f.r.spent=(f.r.spent||0)+hrs;
+    S.sessions.push({d:dk, m:Math.round(secs/60), id:a.readingId||null, h:null});
   }
   S.activeTimer=null;
-  save(); updateTimerUI(); renderSummary(); renderReadings();
 }
 
 /* ---------- UI-only prefs: which topic accordions are open ----------
@@ -642,16 +596,6 @@ function readingCard(t,r,onFlagChange){
     wrap.appendChild(lab); wrap.appendChild(input);
     return wrap;
   }
-  const hrsIn=document.createElement("input"); hrsIn.type="number"; hrsIn.min="0"; hrsIn.step="0.5"; hrsIn.placeholder="—";
-  hrsIn.value = r.hrs==null ? "" : r.hrs;
-  hrsIn.onchange=()=>{ const v=parseFloat(hrsIn.value); r.hrs = isNaN(v)?null:Math.max(0,v); save(); renderSummary(); };
-  grid.appendChild(field("الساعات المقدرة", hrsIn));
-
-  const spentIn=document.createElement("input"); spentIn.type="number"; spentIn.min="0"; spentIn.step="0.25";
-  spentIn.value = r.spent||0;
-  spentIn.onchange=()=>{ const v=parseFloat(spentIn.value); r.spent = isNaN(v)?0:Math.max(0,v); save(); renderSummary(); };
-  grid.appendChild(field("الساعات المسجّلة", spentIn));
-
   const qGoalIn=document.createElement("input"); qGoalIn.type="number"; qGoalIn.min="0"; qGoalIn.step="1"; qGoalIn.placeholder="—";
   qGoalIn.value = r.qGoal==null ? "" : r.qGoal;
   qGoalIn.onchange=()=>{ const v=parseInt(qGoalIn.value,10); r.qGoal = isNaN(v)?null:Math.max(0,v); save(); renderReadings(); };
@@ -777,7 +721,6 @@ function renderReadings(){
       });
       openTopics.add(t.id); saveUiPrefs();
       save(); renderReadings(); renderSummary();
-      const sel=$("#timerReadingSel"); if(sel) sel.innerHTML=timerReadingOptions(sel.value);
     };
     body.appendChild(addBtn);
     bodyWrap.appendChild(body);
@@ -812,9 +755,6 @@ function renderAll(){
   renderSummary();
   renderReadings();
   renderMocks();
-  const sel=$("#timerReadingSel");
-  if(sel) sel.innerHTML=timerReadingOptions(S.activeTimer?S.activeTimer.readingId:sel.value);
-  updateTimerUI();
 }
 
 /* ---------- wire up static controls ---------- */
@@ -822,8 +762,6 @@ $("#examDateIn").onchange=e=>{ if(e.target.value){ S.examDate=e.target.value; sa
 $("#searchIn").oninput=e=>{ QUERY=norm(e.target.value.trim()); renderReadings(); };
 $("#expandAllBtn").onclick=()=>{ S.topics.forEach(t=>openTopics.add(t.id)); saveUiPrefs(); renderReadings(); };
 $("#collapseAllBtn").onclick=()=>{ openTopics.clear(); saveUiPrefs(); renderReadings(); };
-$("#timerReadingSel").onchange=()=>updateTimerUI();
-$("#timerBtn").onclick=()=>{ if(S.activeTimer) stopTimer(); else startTimer(); };
 
 $("#mockAddBtn").onclick=()=>{
   const d=$("#mkDate").value || todayKey();
@@ -915,21 +853,7 @@ $("#importFile").onchange=async e=>{
   } else {
     S = fresh();
   }
-  /* a timer left running overnight would otherwise bill today for yesterday's session */
-  if(S.activeTimer){
-    const dk=S.activeTimer.dayKey||todayKey();
-    if(dk!==todayKey()){
-      const secs=Math.min(timerSec(), 4*3600);
-      if(secs>=60){
-        const hrs=secs/3600;
-        S.dailyLog[dk]=(S.dailyLog[dk]||0)+hrs;
-        const f=S.activeTimer.readingId?findReading(S.activeTimer.readingId):null;
-        if(f) f.r.spent=(f.r.spent||0)+hrs;
-        S.sessions.push({d:dk, m:Math.round(secs/60), id:S.activeTimer.readingId||null, h:null});
-      }
-      S.activeTimer=null;
-    }
-  }
+  finalizeDanglingTimer();
   loadUiPrefs();
   renderAll();
   const persisted=await persistState(S,false);
