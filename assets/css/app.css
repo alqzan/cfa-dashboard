@@ -176,6 +176,14 @@ button.armed{background:var(--bad);color:#fff;border-color:var(--bad)}
 .rate-btn.rate-strong.active{background:rgba(84,180,136,.18);border-color:var(--strong);color:#9FDCC0}
 .r-notewrap{display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--faint);margin-top:12px}
 .r-note{resize:vertical;min-height:44px}
+.t-actions{display:flex;gap:10px;flex-wrap:wrap;padding-top:12px}
+.t-copy-btn{
+  background:rgba(199,162,88,.08);border:1px dashed rgba(199,162,88,.45);color:var(--gold);
+  border-radius:999px;padding:7px 16px;min-height:38px;font-size:12.5px;font-weight:700;
+  transition:background .15s,border-color .15s,color .15s;
+}
+.t-copy-btn:hover{background:rgba(199,162,88,.16);border-color:var(--gold)}
+.t-copy-btn.copied{background:rgba(84,180,136,.18);border-style:solid;border-color:var(--strong);color:#9FDCC0}
 .r-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
 .r-copy-btn{
   background:rgba(199,162,88,.1);border:1px solid rgba(199,162,88,.4);color:var(--gold);
@@ -213,7 +221,7 @@ button.armed{background:var(--bad);color:#fff;border-color:var(--bad)}
   .mock-row{grid-template-columns:1fr;gap:2px}
   .exam-days{margin-inline-start:0}
   .r-pairs{grid-template-columns:1fr}
-  .r-copy-btn{width:100%}
+  .r-copy-btn, .t-copy-btn{width:100%}
   .tg-name{white-space:normal}
   .tg-progress{display:none}
 }

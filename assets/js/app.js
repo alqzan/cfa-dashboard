@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_VERSION = "7.8.0";
+const APP_VERSION = "7.9.0";
 
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ----------
    Same storage key as v5/v6 on purpose: this is what makes existing users' data load
@@ -589,19 +589,26 @@ function hoursText(n){
   if(v==="2") return "ساعتان";
   return v+((n>=3 && n<=10) ? " ساعات" : " ساعة");
 }
-function readingSummaryText(t,r){
-  const st=topicStats(t);
+const COPY_DIVIDER = "────────────────";
+function examContextLines(){
   const R=readingsTotals();
+  return [
+    "التاريخ: "+fmtDate(todayKey())+" — متبقٍ على الاختبار "+examDaysLeft()+" يوماً (اختبار "+fmtDate(S.examDate)+")",
+    "تقدّمي العام: "+R.doneCount+"/"+R.total+" قراءة مكتملة ("+Math.round(R.pct)+"٪)"
+  ];
+}
+function topicHeaderLines(t){
+  const st=topicStats(t);
+  return [
+    "القسم: "+(t.en||t.ar)+" — "+(t.ar||"")+" ["+(t.abbr||t.id.toUpperCase())+"]",
+    "تقدّم القسم: "+st.done+"/"+st.total+" ("+st.pct+"٪)"+(st.weak?(" — "+st.weak+" قراءة تحتاج مراجعة"):"")
+  ];
+}
+/* one reading's own state; `prefix` numbers it when several are listed together */
+function readingDetailLines(r, prefix){
   const title=(r.en||"").trim() || (r.ar||"").trim() || "قراءة بدون اسم";
   const L=[];
-  L.push("ملخص قراءة — CFA Level II");
-  L.push("التاريخ: "+fmtDate(todayKey())+" — متبقٍ على الاختبار "+examDaysLeft()+" يوماً (اختبار "+fmtDate(S.examDate)+")");
-  L.push("تقدّمي العام: "+R.doneCount+"/"+R.total+" قراءة مكتملة ("+Math.round(R.pct)+"٪)");
-  L.push("");
-  L.push("القسم: "+(t.en||t.ar)+" — "+(t.ar||"")+" ["+(t.abbr||t.id.toUpperCase())+"]");
-  L.push("تقدّم القسم: "+st.done+"/"+st.total+" ("+st.pct+"٪)"+(st.weak?(" — "+st.weak+" قراءة تحتاج مراجعة"):""));
-  L.push("");
-  L.push("القراءة"+(r.readingNo==null?"":" رقم "+r.readingNo)+": "+title);
+  L.push((prefix||"")+"القراءة"+(r.readingNo==null?"":" رقم "+r.readingNo)+": "+title);
   if(r.ar && r.en) L.push("الاسم بالعربي: "+r.ar);
   L.push("الحالة: "+(STAT[r.status]||r.status));
   if(r.hrs) L.push("الوقت التقديري: "+hoursText(r.hrs));
@@ -622,26 +629,62 @@ function readingSummaryText(t,r){
     L.push("");
     L.push("ملاحظة على المنهج: "+r.excludedNote.trim());
   }
-  L.push("");
+  return L;
+}
+function readingSummaryText(t,r){
+  const L=["ملخص قراءة — CFA Level II"]
+    .concat(examContextLines(), [""], topicHeaderLines(t), [""], readingDetailLines(r), [""]);
   L.push("المطلوب منك: راجع حالتي في هذه القراءة أعلاه، ووضّح لي النقاط اللي أنا ضعيف فيها، واقترح لي خطة مذاكرة ومراجعة عملية لها.");
   return L.join("\n");
 }
-function copyButton(t,r){
+/* the whole topic: every reading in it, regardless of the search filter (hence "القسم كامل") */
+function topicSummaryText(t){
+  const L=["ملخص قسم كامل — CFA Level II"]
+    .concat(examContextLines(), [""], topicHeaderLines(t));
+  L.push("عدد القراءات في القسم: "+t.r.length);
+  t.r.forEach((r,i)=>{
+    L.push("");
+    L.push(COPY_DIVIDER);
+    L.push.apply(L, readingDetailLines(r, "["+(i+1)+"/"+t.r.length+"] "));
+  });
+  L.push("");
+  L.push(COPY_DIVIDER);
+  L.push("المطلوب منك: راجع حالتي في هذا القسم كاملاً، وحدّد لي أضعف القراءات والترتيب الأنسب لمراجعتها، واقترح لي خطة مذاكرة عملية للقسم كله.");
+  return L.join("\n");
+}
+/* shared click behaviour: copy, then report the real result inline + in the toast pill */
+function makeCopyBtn(cls, label, title, buildText, okToast){
   const btn=document.createElement("button");
-  btn.type="button"; btn.className="r-copy-btn";
-  btn.textContent="نسخ إلى ابو جبت";
-  btn.title="نسخ حالة هذه القراءة كاملة (ملاحظاتي وتقييماتي) للصقها في ChatGPT";
-  btn.onclick=async ()=>{
+  btn.type="button"; btn.className=cls;
+  btn.textContent=label;
+  btn.title=title;
+  btn.onclick=async (e)=>{
+    e.stopPropagation();
     if(btn.dataset.busy==="1") return;
     btn.dataset.busy="1";
-    const ok=await copyText(readingSummaryText(t,r));
-    const old=btn.textContent;
+    const ok=await copyText(buildText());
     btn.textContent = ok ? "✓ تم النسخ" : "تعذّر النسخ";
     btn.classList.toggle("copied", ok);
-    toast(ok ? "تم نسخ ملخص القراءة — الصقه في ابو جبت" : "تعذّر النسخ؛ جرّب مرة ثانية", !ok);
-    setTimeout(()=>{ btn.textContent=old; btn.classList.remove("copied"); btn.dataset.busy=""; }, 1600);
+    toast(ok ? okToast : "تعذّر النسخ؛ جرّب مرة ثانية", !ok);
+    setTimeout(()=>{ btn.textContent=label; btn.classList.remove("copied"); btn.dataset.busy=""; }, 1600);
   };
   return btn;
+}
+function copyButton(t,r){
+  return makeCopyBtn(
+    "r-copy-btn", "نسخ إلى ابو جبت",
+    "نسخ حالة هذه القراءة كاملة (ملاحظاتي وتقييماتي) للصقها في ChatGPT",
+    ()=>readingSummaryText(t,r),
+    "تم نسخ ملخص القراءة — الصقه في ابو جبت"
+  );
+}
+function copyTopicButton(t){
+  return makeCopyBtn(
+    "t-copy-btn", "نسخ القسم كامل إلى ابو جبت",
+    "نسخ حالة قراءات هذا القسم كلها (ملاحظاتي وتقييماتي) للصقها في ChatGPT",
+    ()=>topicSummaryText(t),
+    "تم نسخ ملخص القسم كامل — الصقه في ابو جبت"
+  );
 }
 
 function readingMatchesQuery(t,r){
@@ -766,6 +809,9 @@ function renderReadings(){
 
     const bodyWrap=document.createElement("div"); bodyWrap.className="t-group-body-wrap";
     const body=document.createElement("div"); body.className="t-group-body";
+    const tActions=document.createElement("div"); tActions.className="t-actions";
+    tActions.appendChild(copyTopicButton(t));
+    body.appendChild(tActions);
     rows.forEach(r=>body.appendChild(readingCard(t,r,refreshHeader)));
     const addBtn=document.createElement("button"); addBtn.type="button"; addBtn.className="add-reading-btn";
     addBtn.textContent="+ إضافة قراءة جديدة";
