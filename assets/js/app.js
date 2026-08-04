@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_VERSION = "7.7.0";
+const APP_VERSION = "7.8.0";
 
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ----------
    Same storage key as v5/v6 on purpose: this is what makes existing users' data load
@@ -558,6 +558,92 @@ function noteField(label, r, key){
   wrap.appendChild(area);
   return wrap;
 }
+/* ---------- copy a reading's full state as text (for pasting into ChatGPT) ----------
+   Reads only what's already in state; nothing here writes or changes study data. */
+async function copyText(text){
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext){
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  }catch(e){}
+  /* fallback for non-secure contexts / older iOS Safari */
+  try{
+    const ta=document.createElement("textarea");
+    ta.value=text;
+    ta.setAttribute("readonly","");
+    ta.style.position="fixed"; ta.style.top="0"; ta.style.insetInlineStart="-9999px"; ta.style.opacity="0";
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    const ok=document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }catch(e){ return false; }
+}
+function rateText(v){ return RATE_LABEL[v] || "لم أقيّمها بعد"; }
+function noteText(v){ const s=(v||"").trim(); return s || "(لا توجد ملاحظات)"; }
+function hoursText(n){
+  const v=fmt(n);
+  if(v==="1") return "ساعة واحدة";
+  if(v==="2") return "ساعتان";
+  return v+((n>=3 && n<=10) ? " ساعات" : " ساعة");
+}
+function readingSummaryText(t,r){
+  const st=topicStats(t);
+  const R=readingsTotals();
+  const title=(r.en||"").trim() || (r.ar||"").trim() || "قراءة بدون اسم";
+  const L=[];
+  L.push("ملخص قراءة — CFA Level II");
+  L.push("التاريخ: "+fmtDate(todayKey())+" — متبقٍ على الاختبار "+examDaysLeft()+" يوماً (اختبار "+fmtDate(S.examDate)+")");
+  L.push("تقدّمي العام: "+R.doneCount+"/"+R.total+" قراءة مكتملة ("+Math.round(R.pct)+"٪)");
+  L.push("");
+  L.push("القسم: "+(t.en||t.ar)+" — "+(t.ar||"")+" ["+(t.abbr||t.id.toUpperCase())+"]");
+  L.push("تقدّم القسم: "+st.done+"/"+st.total+" ("+st.pct+"٪)"+(st.weak?(" — "+st.weak+" قراءة تحتاج مراجعة"):""));
+  L.push("");
+  L.push("القراءة"+(r.readingNo==null?"":" رقم "+r.readingNo)+": "+title);
+  if(r.ar && r.en) L.push("الاسم بالعربي: "+r.ar);
+  L.push("الحالة: "+(STAT[r.status]||r.status));
+  if(r.hrs) L.push("الوقت التقديري: "+hoursText(r.hrs));
+  L.push("");
+  L.push("تقييم فهمي للقراءة: "+rateText(r.mastery));
+  L.push("ملاحظات القراءة:");
+  L.push(noteText(r.note));
+  L.push("");
+  L.push("تقييم حلّي للأسئلة: "+rateText(r.qMastery));
+  L.push("ملاحظات الأسئلة:");
+  L.push(noteText(r.qNote));
+  if(r.qSolved){
+    const acc=Math.round((r.qCorrect||0)/r.qSolved*100);
+    L.push("");
+    L.push("الأسئلة المحلولة: "+r.qSolved+" — صحيحة: "+(r.qCorrect||0)+" ("+acc+"٪)"+(r.qGoal?" — الهدف: "+r.qGoal:""));
+  }
+  if(r.excludedFraction && (r.excludedNote||"").trim()){
+    L.push("");
+    L.push("ملاحظة على المنهج: "+r.excludedNote.trim());
+  }
+  L.push("");
+  L.push("المطلوب منك: راجع حالتي في هذه القراءة أعلاه، ووضّح لي النقاط اللي أنا ضعيف فيها، واقترح لي خطة مذاكرة ومراجعة عملية لها.");
+  return L.join("\n");
+}
+function copyButton(t,r){
+  const btn=document.createElement("button");
+  btn.type="button"; btn.className="r-copy-btn";
+  btn.textContent="نسخ إلى ابو جبت";
+  btn.title="نسخ حالة هذه القراءة كاملة (ملاحظاتي وتقييماتي) للصقها في ChatGPT";
+  btn.onclick=async ()=>{
+    if(btn.dataset.busy==="1") return;
+    btn.dataset.busy="1";
+    const ok=await copyText(readingSummaryText(t,r));
+    const old=btn.textContent;
+    btn.textContent = ok ? "✓ تم النسخ" : "تعذّر النسخ";
+    btn.classList.toggle("copied", ok);
+    toast(ok ? "تم نسخ ملخص القراءة — الصقه في ابو جبت" : "تعذّر النسخ؛ جرّب مرة ثانية", !ok);
+    setTimeout(()=>{ btn.textContent=old; btn.classList.remove("copied"); btn.dataset.busy=""; }, 1600);
+  };
+  return btn;
+}
+
 function readingMatchesQuery(t,r){
   if(!QUERY) return true;
   const hay=norm((r.en||"")+" "+(r.ar||"")+" "+(t.en||"")+" "+(t.ar||""));
@@ -612,6 +698,10 @@ function readingCard(t,r,onFlagChange){
   pairs.appendChild(qPair);
 
   card.appendChild(pairs);
+
+  const actions=document.createElement("div"); actions.className="r-actions";
+  actions.appendChild(copyButton(t,r));
+  card.appendChild(actions);
 
   return card;
 }
