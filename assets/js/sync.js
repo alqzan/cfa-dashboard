@@ -16,10 +16,13 @@
 const SYNC_CFG_KEY = "cfa_l2_sync_cfg_v1";
 const SYNC_BACKUP_KEY = "cfa_l2_pre_sync_backup";
 const SYNC_PATH = "cfa-sync";
+/* The project's Firebase Realtime Database is public configuration; the per-user
+   sync code remains local and is still required before any data can be read/written. */
+const SYNC_DEFAULT_URL = "https://cfa-study-tracker-cba60-default-rtdb.europe-west1.firebasedatabase.app";
 const SYNC_PUSH_DEBOUNCE = 4000;
 const SYNC_POLL_MS = 120000;
 
-let syncCfg = { enabled:false, url:"", code:"", deviceId:"", lastSyncAt:0, remoteStamp:null };
+let syncCfg = { enabled:false, url:SYNC_DEFAULT_URL, code:"", deviceId:"", lastSyncAt:0, remoteStamp:null };
 let syncPushT = null;
 let syncPollT = null;
 let syncBusy = false;
@@ -30,6 +33,7 @@ function syncReadCfg(){
     const raw = localStorage.getItem(SYNC_CFG_KEY);
     if(raw) syncCfg = Object.assign(syncCfg, JSON.parse(raw) || {});
   }catch(e){}
+  if(!syncCfg.url) syncCfg.url = SYNC_DEFAULT_URL;
   if(!syncCfg.deviceId) syncCfg.deviceId = syncRandom(8);
   return syncCfg;
 }
