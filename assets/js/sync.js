@@ -26,6 +26,7 @@ let syncCfg = { enabled:false, url:SYNC_DEFAULT_URL, code:"", deviceId:"", lastS
 let syncPushT = null;
 let syncPollT = null;
 let syncBusy = false;
+let syncQueued = false;
 let syncPending = null; /* the remote envelope waiting on a conflict decision */
 
 function syncReadCfg(){
@@ -181,7 +182,10 @@ async function syncAdoptRemote(env){
   if(!persisted){ toast("تعذّر حفظ بيانات السحابة؛ لم تتغيّر بياناتك", true); return false; }
   S = candidate;
   syncCfg.remoteStamp = env.updatedAt || null;
-  syncCfg.lastSyncAt = Date.now();
+  /* the adopted stamp comes from the other device's clock; if that clock runs ahead of
+     this one, a plain Date.now() here would read as "changed locally" and push the same
+     data straight back — two devices could then trade pointless writes forever */
+  syncCfg.lastSyncAt = Math.max(Date.now(), candidate.lastLocalChangeAt || 0);
   syncWriteCfg();
   renderAll();
   return true;
@@ -189,14 +193,20 @@ async function syncAdoptRemote(env){
 async function syncPushLocal(){
   await flushSave();
   const stamp = Date.now();
+  /* Read the change stamp of the exact snapshot being sent, and mark that as what is
+     synced. Using Date.now() after the round trip instead would swallow any edit typed
+     while the PUT was in flight: its lastLocalChangeAt would fall before lastSyncAt, so
+     the next pass would see nothing to push and the edit would sit on this device only. */
+  const payload = JSON.parse(JSON.stringify(S));
+  const syncedUpTo = payload.lastLocalChangeAt || stamp;
   await syncRemotePut({
     updatedAt: stamp,
     device: syncCfg.deviceId,
     appVersion: APP_VERSION,
-    data: JSON.parse(JSON.stringify(S))
+    data: payload
   });
   syncCfg.remoteStamp = stamp;
-  syncCfg.lastSyncAt = Date.now();
+  syncCfg.lastSyncAt = syncedUpTo;
   syncWriteCfg();
   return true;
 }
@@ -231,7 +241,9 @@ function syncHasLocalProgress(){
 async function syncRun(opts){
   opts = opts || {};
   if(!syncConfigured()){ syncSetStatus("off"); return; }
-  if(syncBusy) return;
+  /* Don't drop it: a push landing mid-pass would otherwise wait for the two-minute
+     poll before the edit that triggered it ever leaves this device. */
+  if(syncBusy){ syncQueued = true; return; }
   if(!navigator.onLine){ syncSetStatus("offline"); return; }
   syncBusy = true;
   syncSetStatus("syncing");
@@ -286,6 +298,7 @@ async function syncRun(opts){
     if(opts.loud) toast("تعذّرت المزامنة — اقرأ سبب الخطأ تحت الحالة", true);
   }finally{
     syncBusy = false;
+    if(syncQueued){ syncQueued = false; setTimeout(()=>syncRun(), 300); }
   }
 }
 
@@ -427,12 +440,15 @@ async function syncBoot(){
   syncWireUi();
   syncFillForm();
   syncSetStatus(syncConfigured() ? "syncing" : "off");
-  if(!syncConfigured()) return;
-  await syncRun({loud: !!paired});
-  syncStartPolling();
+  /* Registered unconditionally — syncRun() is a no-op while sync is off. Registering
+     them only when already configured would leave a device that turns sync on from the
+     button with no pull on focus, visibility or reconnect until the next page load. */
   window.addEventListener("online", ()=>syncRun());
   document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncRun(); });
   window.addEventListener("focus", ()=>syncRun());
+  if(!syncConfigured()) return;
+  await syncRun({loud: !!paired});
+  syncStartPolling();
 }
 
 window.cfaSync = { boot: syncBoot, run: syncRun, onLocalChange: syncOnLocalChange };

@@ -180,7 +180,67 @@ ok("short codes are rejected before any request", await C.evaluate(async () => {
   return !syncCodeValid("tooshort");
 }));
 
-console.log("\nTest 11: wrong-shaped URLs are named before any request is made");
+console.log("\nTest 11: an edit typed while an upload is in flight is not swallowed");
+const F = await newPage();
+let held = null;                       // holds the first PUT open until we release it
+await F.route("**/*firebasedatabase.app/**", async route => {
+  const req = route.request();
+  if(req.method() === "PUT"){
+    cloud = JSON.parse(req.postData()); putCount++;
+    if(!held){ held = true; await new Promise(r=>setTimeout(r, 2500)); }
+    return route.fulfill({ status:200, contentType:"application/json", body: req.postData() });
+  }
+  return route.fulfill({ status:200, contentType:"application/json", body: JSON.stringify(cloud) });
+});
+cloud = null;
+await F.goto(BASE);
+await F.waitForFunction(() => window.__cfaAppReady === true);
+await F.evaluate(() => { S.topics[0].r[0].note = "EDIT_BEFORE_PUT"; save(); });
+await F.locator("#syncUrl").fill("https://fake-default-rtdb.firebasedatabase.app");
+await F.locator("#syncGenBtn").click();
+const putsBeforeHold = putCount;       // earlier tests already uploaded; count from here
+F.locator("#syncSaveBtn").click();     // deliberately not awaited: the PUT is held open
+// Wait for the upload to actually be in flight before typing. A fixed delay here is a
+// race: the click's own overhead can push the PUT past it, and the edit then rides
+// along in the very payload the test means to have missed it.
+const arrived = await (async () => {
+  const t0 = Date.now();
+  while(Date.now() - t0 < 15000){ if(putCount > putsBeforeHold && cloud) return true; await new Promise(r=>setTimeout(r,50)); }
+  return false;
+})();
+ok("the upload really is in flight before we type", arrived);
+ok("the held upload does not already contain the later edit",
+   !JSON.stringify(cloud.data).includes("EDIT_DURING_PUT"));
+await F.evaluate(() => { S.topics[0].r[1].note = "EDIT_DURING_PUT"; save(); });
+const landed = await (async () => {
+  const t0 = Date.now();
+  while(Date.now() - t0 < 20000){
+    if(cloud && JSON.stringify(cloud.data).includes("EDIT_DURING_PUT")) return true;
+    await new Promise(r=>setTimeout(r,250));
+  }
+  return false;
+})();
+ok("the edit made mid-upload still reaches the cloud", landed);
+ok("the earlier edit is there too", JSON.stringify(cloud.data).includes("EDIT_BEFORE_PUT"));
+
+console.log("\nTest 12: a cloud stamp from a clock running ahead does not bounce back");
+const G = await newPage();
+await G.goto(BASE);
+await G.waitForFunction(() => window.__cfaAppReady === true);
+cloud = { updatedAt: Date.now() + 3600000, device: "other", appVersion: "7.10.0",
+          data: await G.evaluate(() => { S.topics[0].r[0].note = "FROM_FAST_CLOCK"; return JSON.parse(JSON.stringify(S)); }) };
+await G.evaluate(() => { S.topics[0].r[0].note = ""; });   // local copy without that note
+await G.locator("#syncUrl").fill("https://fake-default-rtdb.firebasedatabase.app");
+await G.locator("#syncCode").fill("zzzzyyyyxxxxwwwwvvvv");
+await G.locator("#syncSaveBtn").click();
+await G.waitForFunction(() => document.querySelector("#syncStatus").dataset.kind === "ok", null, {timeout:8000});
+ok("adopted the ahead-of-clock cloud copy", (await G.evaluate(() => S.topics[0].r[0].note)) === "FROM_FAST_CLOCK");
+const putsAfterAdopt = putCount;
+await G.evaluate(() => window.cfaSync.run());
+await G.waitForTimeout(900);
+ok("no pointless write-back afterwards", putCount === putsAfterAdopt, "extra puts: " + (putCount - putsAfterAdopt));
+
+console.log("\nTest 13: wrong-shaped URLs are named before any request is made");
 const E = await newPage();
 let reqs = 0;
 const seen = [];
@@ -206,7 +266,7 @@ for(const [url, needle] of cases){
 ok("no network request was attempted for any of them", reqs === 0, seen.join(" | "));
 ok("sync stayed off after every rejection", (await E.locator("#syncStatus").getAttribute("data-kind")) === "off");
 
-console.log("\nTest 12: the pairing link is copied to the clipboard");
+console.log("\nTest 14: the pairing link is copied to the clipboard");
 const D = await newPage();
 await D.goto(BASE);
 await D.waitForFunction(() => window.__cfaAppReady === true);
