@@ -171,6 +171,8 @@ await C.locator("#syncSaveBtn").click();
 await C.waitForTimeout(1200);
 ok("status shows an error", (await C.locator("#syncStatus").getAttribute("data-kind")) === "error");
 ok("local data untouched after a failed sync", (await C.evaluate(() => S.topics[0].r[0].note)) === "MARKER_C_LOCAL");
+ok("the 401 is explained as unpublished rules",
+   (await C.locator("#syncError").textContent()).includes("Rules"));
 ok("short codes are rejected before any request", await C.evaluate(async () => {
   document.querySelector("#syncCode").value = "tooshort";
   document.querySelector("#syncSaveBtn").click();
@@ -178,7 +180,33 @@ ok("short codes are rejected before any request", await C.evaluate(async () => {
   return !syncCodeValid("tooshort");
 }));
 
-console.log("\nTest 11: the pairing link is copied to the clipboard");
+console.log("\nTest 11: wrong-shaped URLs are named before any request is made");
+const E = await newPage();
+let reqs = 0;
+const seen = [];
+await E.route("**/*", r => {
+  const u = r.request().url();
+  if(!u.startsWith("http://127.0.0.1:4173/") && !/fonts\.(googleapis|gstatic)\.com/.test(u)){ reqs++; seen.push(u); }
+  return r.continue();
+});
+await E.goto(BASE);
+await E.waitForFunction(() => window.__cfaAppReady === true);
+const cases = [
+  ["https://console.firebase.google.com/project/x/database", "لوحة تحكم"],
+  ["https://my-project.firebaseapp.com", "Realtime Database"],
+  ["https://example.com/db", "firebaseio.com"]
+];
+for(const [url, needle] of cases){
+  await E.locator("#syncUrl").fill(url);
+  await E.locator("#syncCode").fill("abcdefghijklmnop1234");
+  await E.locator("#syncSaveBtn").click();
+  await E.waitForTimeout(200);
+  ok("rejects " + url.slice(8, 38), (await E.locator("#syncError").textContent()).includes(needle));
+}
+ok("no network request was attempted for any of them", reqs === 0, seen.join(" | "));
+ok("sync stayed off after every rejection", (await E.locator("#syncStatus").getAttribute("data-kind")) === "off");
+
+console.log("\nTest 12: the pairing link is copied to the clipboard");
 const D = await newPage();
 await D.goto(BASE);
 await D.waitForFunction(() => window.__cfaAppReady === true);

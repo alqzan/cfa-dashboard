@@ -225,6 +225,10 @@ button.armed{background:var(--bad);color:#fff;border-color:var(--bad)}
 .sync-lab input{font-size:13px}
 .sync-tools{display:flex;gap:10px;flex-wrap:wrap}
 .sync-tools button{font-size:13px}
+.sync-error{
+  margin-top:14px;padding:12px 14px;border-radius:var(--rs);font-size:13px;line-height:1.75;
+  background:rgba(216,106,75,.08);border:1px solid rgba(216,106,75,.45);color:#F0B7A6;
+}
 .sync-conflict{
   margin-top:14px;padding:14px;border-radius:var(--rs);
   background:rgba(216,106,75,.08);border:1px solid rgba(216,106,75,.45);

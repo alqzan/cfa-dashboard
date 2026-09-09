@@ -55,25 +55,73 @@ function syncNormalizeUrl(raw){
   try{ new URL(u); }catch(e){ return ""; }
   return u;
 }
+/* named before the first request rather than after a confusing 404 */
+function syncUrlComplaint(u){
+  if(/console\.firebase\.google\.com/i.test(u))
+    return "هذا رابط لوحة تحكم Firebase وليس رابط قاعدة البيانات. افتح Realtime Database وانسخ الرابط الظاهر أعلى الجدول.";
+  if(/firestore|\.firebaseapp\.com|\.web\.app/i.test(u))
+    return "هذا رابط مشروع/Firestore وليس Realtime Database. المطلوب رابط ينتهي بـ firebaseio.com أو firebasedatabase.app.";
+  if(!/(firebaseio\.com|firebasedatabase\.app)$/i.test(u))
+    return "الرابط لا يبدو رابط Realtime Database. المفروض ينتهي بـ firebaseio.com أو firebasedatabase.app.";
+  return "";
+}
 function syncCodeValid(code){ return /^[a-z0-9]{16,64}$/.test(String(code||"").trim()); }
 function syncEndpoint(){ return syncCfg.url + "/" + SYNC_PATH + "/" + syncCfg.code + ".json"; }
 function syncConfigured(){ return !!(syncCfg.enabled && syncCfg.url && syncCodeValid(syncCfg.code)); }
 
 /* ---------- remote I/O ---------- */
+function syncHttpError(method, res){
+  const e = new Error(method + " " + res.status);
+  e.status = res.status;
+  e.method = method;
+  return e;
+}
 async function syncRemoteGet(){
-  const res = await fetch(syncEndpoint() + "?t=" + Date.now(), { method:"GET", cache:"no-store" });
-  if(!res.ok) throw new Error("GET " + res.status);
+  let res;
+  try{
+    res = await fetch(syncEndpoint() + "?t=" + Date.now(), { method:"GET", cache:"no-store" });
+  }catch(e){ const err = new Error("network"); err.network = true; throw err; }
+  if(!res.ok) throw syncHttpError("GET", res);
   const body = await res.json();
   return body && typeof body === "object" ? body : null;
 }
 async function syncRemotePut(envelope){
-  const res = await fetch(syncEndpoint(), {
-    method:"PUT",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify(envelope)
-  });
-  if(!res.ok) throw new Error("PUT " + res.status);
+  let res;
+  try{
+    res = await fetch(syncEndpoint(), {
+      method:"PUT",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(envelope)
+    });
+  }catch(e){ const err = new Error("network"); err.network = true; throw err; }
+  if(!res.ok) throw syncHttpError("PUT", res);
   return true;
+}
+
+/* Turn a failure into the one sentence that names the actual step to fix. The generic
+   "check your link and code" is useless: every one of these has a different remedy. */
+function syncExplain(err){
+  if(!navigator.onLine) return "لا يوجد اتصال بالإنترنت. تُستأنف المزامنة تلقائياً عند رجوع الاتصال.";
+  if(err && err.network)
+    return "تعذّر الوصول إلى الرابط. تأكد أنك نسخته كاملاً من أعلى صفحة Realtime Database في Firebase، "+
+           "وأن قاعدة البيانات لم تُحذف.";
+  const st = err && err.status;
+  if(st === 401 || st === 403)
+    return "قاعدة البيانات ترفض الوصول — قواعد الوصول لم تُنشر بعد (ما زالت على الوضع المقفل). "+
+           "افتح Realtime Database ← تبويب Rules، والصق القواعد الموجودة في SYNC_SETUP.md ثم اضغط Publish.";
+  if(st === 404)
+    return "الرابط لا يشير إلى قاعدة بيانات موجودة. انسخه من أعلى صفحة Realtime Database تحديداً "+
+           "(وليس رابط Firestore ولا رابط لوحة تحكم المشروع).";
+  if(st === 400)
+    return "الرابط غير صالح. المفروض ينتهي بـ firebaseio.com أو firebasedatabase.app بدون أي مسار بعده.";
+  if(st) return "استجابة غير متوقعة من Firebase (" + err.method + " " + st + ").";
+  return "تعذّرت المزامنة لسبب غير معروف. جرّب «مزامنة الآن» مرة ثانية.";
+}
+function syncShowError(msg){
+  const el = document.querySelector("#syncError");
+  if(!el) return;
+  el.textContent = msg || "";
+  el.hidden = !msg;
 }
 
 /* ---------- status line ---------- */
@@ -183,6 +231,7 @@ async function syncRun(opts){
   if(!navigator.onLine){ syncSetStatus("offline"); return; }
   syncBusy = true;
   syncSetStatus("syncing");
+  syncShowError("");
   try{
     const env = await syncRemoteGet();
     const localChanged = (S && S.lastLocalChangeAt ? S.lastLocalChangeAt : 0) > (syncCfg.lastSyncAt || 0);
@@ -228,8 +277,9 @@ async function syncRun(opts){
     if(opts.loud) toast("بياناتك محدّثة على كل الأجهزة");
   }catch(err){
     console.warn("sync failed", err);
-    syncSetStatus(navigator.onLine ? "error" : "offline", String(err && err.message || "").slice(0,24));
-    if(opts.loud) toast("تعذّرت المزامنة — تحقّق من الرابط والرمز", true);
+    syncSetStatus(navigator.onLine && !err.network ? "error" : "offline", String(err && err.message || "").slice(0,24));
+    syncShowError(syncExplain(err));
+    if(opts.loud) toast("تعذّرت المزامنة — اقرأ سبب الخطأ تحت الحالة", true);
   }finally{
     syncBusy = false;
   }
@@ -319,8 +369,15 @@ function syncWireUi(){
   if(saveBtn) saveBtn.onclick = async ()=>{
     const url = syncNormalizeUrl((document.querySelector("#syncUrl")||{}).value);
     const code = String(((document.querySelector("#syncCode")||{}).value)||"").trim().toLowerCase();
-    if(!url){ toast("رابط قاعدة البيانات غير صالح", true); return; }
-    if(!syncCodeValid(code)){ toast("رمز المزامنة يجب أن يكون 16 حرفاً فأكثر (حروف وأرقام)", true); return; }
+    if(!url){ syncShowError("رابط قاعدة البيانات غير صالح."); toast("رابط قاعدة البيانات غير صالح", true); return; }
+    const complaint = syncUrlComplaint(url);
+    if(complaint){ syncShowError(complaint); toast("الرابط ليس رابط Realtime Database", true); return; }
+    if(!syncCodeValid(code)){
+      syncShowError("رمز المزامنة يجب أن يكون من 16 إلى 64 حرفاً، حروفاً إنجليزية صغيرة وأرقاماً فقط. "+
+                    "اضغط «توليد رمز» ليولّده الموقع لك.");
+      toast("رمز المزامنة غير صالح", true); return;
+    }
+    syncShowError("");
     const changedTarget = (url !== syncCfg.url) || (code !== syncCfg.code);
     syncCfg.url = url; syncCfg.code = code; syncCfg.enabled = true;
     if(changedTarget){ syncCfg.remoteStamp = null; syncCfg.lastSyncAt = 0; }
@@ -340,6 +397,7 @@ function syncWireUi(){
     syncWriteCfg();
     clearInterval(syncPollT);
     syncShowConflict(false);
+    syncShowError("");
     syncFillForm();
     syncSetStatus("off");
     toast("أُوقفت المزامنة — بياناتك المحلية كما هي");
