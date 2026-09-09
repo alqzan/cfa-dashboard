@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_VERSION = "7.9.0";
+const APP_VERSION = "7.10.0";
 
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ----------
    Same storage key as v5/v6 on purpose: this is what makes existing users' data load
@@ -361,6 +361,7 @@ function save(){
   if(S) S.lastLocalChangeAt = Date.now();
   clearTimeout(saveT);
   saveT = setTimeout(()=>{ saveT=null; persistState(S,true); }, 300);
+  if(window.cfaSync) window.cfaSync.onLocalChange();
 }
 function flushSave(){
   clearTimeout(saveT);
@@ -678,6 +679,118 @@ function copyButton(t,r){
     "تم نسخ ملخص القراءة — الصقه في ابو جبت"
   );
 }
+/* ---------- copy EVERYTHING: one full snapshot of my progress ----------
+   Same rule as the smaller copy buttons: reads live state only, writes nothing. */
+function statusCounts(){
+  const c={todo:0,doing:0,done:0};
+  allReadingsFlat().forEach(({r})=>{ if(c[r.status]===undefined) c[r.status]=0; c[r.status]++; });
+  return c;
+}
+function questionTotals(){
+  let solved=0, correct=0;
+  allReadingsFlat().forEach(({r})=>{ solved+=r.qSolved||0; correct+=r.qCorrect||0; });
+  return {solved, correct, pct: solved ? Math.round(correct/solved*100) : null};
+}
+/* "weak" = I rated either the reading itself or my question-solving as weak */
+function weakReadings(){
+  return allReadingsFlat().filter(({r})=> r.mastery==="weak" || r.qMastery==="weak");
+}
+function overviewLines(){
+  const R=readingsTotals(), c=statusCounts(), q=questionTotals(), weak=weakReadings();
+  const L=[];
+  L.push("عدد الأقسام: "+S.topics.length+" — إجمالي القراءات: "+R.total);
+  L.push("حالة القراءات: مكتملة "+(c.done||0)+" — أذاكرها الآن "+(c.doing||0)+" — لم أبدأ "+(c.todo||0));
+  L.push("قراءات قيّمتها ضعيفة (تحتاج مراجعة): "+weak.length);
+  if(q.solved) L.push("إجمالي الأسئلة المحلولة: "+q.solved+" — صحيحة: "+q.correct+" ("+q.pct+"٪)");
+  else L.push("إجمالي الأسئلة المحلولة: لم أسجّل أي أسئلة بعد");
+  return L;
+}
+function topicsTableLines(){
+  return S.topics.map(t=>{
+    const st=topicStats(t);
+    return "• ["+(t.abbr||t.id.toUpperCase())+"] "+(t.en||t.ar)+" — "+st.done+"/"+st.total+" ("+st.pct+"٪)"+
+      (st.weak ? (" — "+st.weak+" تحتاج مراجعة") : "");
+  });
+}
+function weakListLines(){
+  const weak=weakReadings();
+  if(!weak.length) return ["(لا توجد قراءات قيّمتها ضعيفة حتى الآن)"];
+  return weak.map(({t,r})=>{
+    const title=(r.en||"").trim() || (r.ar||"").trim() || "قراءة بدون اسم";
+    const why=[];
+    if(r.mastery==="weak") why.push("فهم القراءة ضعيف");
+    if(r.qMastery==="weak") why.push("حلّ الأسئلة ضعيف");
+    return "• ["+(t.abbr||t.id.toUpperCase())+"] "+title+" — "+why.join(" + ");
+  });
+}
+function mockLines(){
+  const ms=(S.mocks||[]).slice().sort((a,b)=> a.date<b.date?1:-1);
+  if(!ms.length) return ["(لا اختبارات تجريبية مسجّلة بعد)"];
+  const avg=ms.reduce((s,m)=>s+(m.score||0),0)/ms.length;
+  const best=ms.reduce((b,m)=> (m.score||0)>(b.score||0)?m:b, ms[0]);
+  const L=["عدد الاختبارات: "+ms.length+" — المتوسط: "+fmt(avg)+"٪ — الأفضل: "+fmt(best.score)+"٪ ("+fmtDate(best.date)+")",""];
+  ms.forEach(m=>{
+    const note=(m.note||"").trim();
+    L.push("• "+fmtDate(m.date)+" — "+((m.name||"").trim()||"اختبار تجريبي")+" — "+fmt(m.score)+"٪"+(note?(" — "+note):""));
+  });
+  return L;
+}
+/* every topic, every reading, every note and rating I have — nothing filtered out */
+function fullSummaryText(){
+  const L=["ملخص تقدّمي الكامل — CFA Level II"].concat(examContextLines(), [""]);
+  L.push(COPY_DIVIDER);
+  L.push("١) نظرة عامة");
+  L.push(COPY_DIVIDER);
+  L.push.apply(L, overviewLines());
+
+  L.push("");
+  L.push(COPY_DIVIDER);
+  L.push("٢) تقدّمي في كل قسم");
+  L.push(COPY_DIVIDER);
+  L.push.apply(L, topicsTableLines());
+
+  L.push("");
+  L.push(COPY_DIVIDER);
+  L.push("٣) القراءات التي قيّمتها ضعيفة");
+  L.push(COPY_DIVIDER);
+  L.push.apply(L, weakListLines());
+
+  L.push("");
+  L.push(COPY_DIVIDER);
+  L.push("٤) الاختبارات التجريبية");
+  L.push(COPY_DIVIDER);
+  L.push.apply(L, mockLines());
+
+  L.push("");
+  L.push(COPY_DIVIDER);
+  L.push("٥) تفاصيل كل قراءة (ملاحظاتي وتقييماتي كاملة)");
+  L.push(COPY_DIVIDER);
+  S.topics.forEach(t=>{
+    L.push("");
+    L.push("══════ "+(t.abbr||t.id.toUpperCase())+" ══════");
+    L.push.apply(L, topicHeaderLines(t));
+    t.r.forEach((r,i)=>{
+      L.push("");
+      L.push(COPY_DIVIDER);
+      L.push.apply(L, readingDetailLines(r, "["+(i+1)+"/"+t.r.length+"] "));
+    });
+  });
+
+  L.push("");
+  L.push(COPY_DIVIDER);
+  L.push("المطلوب منك: هذا كل تقدّمي في CFA Level II. راجعه كاملاً، وحدّد لي أضعف نقاطي "+
+    "وأولويات المراجعة بالترتيب، ثم اقترح لي خطة مذاكرة عملية للأيام المتبقية حتى الاختبار "+
+    "موزّعة على الأقسام حسب أوزانها وحسب ضعفي الفعلي.");
+  return L.join("\n");
+}
+function copyAllButton(){
+  return makeCopyBtn(
+    "copy-all-btn", "نسخ كل تقدّمي إلى ابو جبت",
+    "نسخ كل تقدّمي كاملاً (كل الأقسام والقراءات والملاحظات والتقييمات والاختبارات) للصقه في ChatGPT",
+    fullSummaryText,
+    "تم نسخ كل تقدّمي — الصقه في ابو جبت"
+  );
+}
 function copyTopicButton(t){
   return makeCopyBtn(
     "t-copy-btn", "نسخ القسم كامل إلى ابو جبت",
@@ -862,6 +975,9 @@ function renderAll(){
 }
 
 /* ---------- wire up static controls ---------- */
+const copyAllHost=$("#copyAllHost");
+if(copyAllHost) copyAllHost.appendChild(copyAllButton());
+
 $("#examDateIn").onchange=e=>{ if(e.target.value){ S.examDate=e.target.value; save(); renderSummary(); } };
 $("#searchIn").oninput=e=>{ QUERY=norm(e.target.value.trim()); renderReadings(); };
 $("#expandAllBtn").onclick=()=>{ S.topics.forEach(t=>openTopics.add(t.id)); saveUiPrefs(); renderReadings(); };
@@ -935,6 +1051,7 @@ $("#importFile").onchange=async e=>{
     }
     S=candidate;
     renderAll();
+    if(window.cfaSync) window.cfaSync.onLocalChange();
     toast("تم استيراد النسخة الاحتياطية بنجاح");
   };
   rd.readAsText(f);
@@ -964,6 +1081,9 @@ $("#importFile").onchange=async e=>{
   if(!persisted){
     toast("الحفظ الدائم غير متاح في هذا المتصفح", true);
   }
+  /* sync.js is the next deferred script; it waits for this before touching the network */
+  window.__cfaAppReady = true;
+  document.dispatchEvent(new Event("cfa:ready"));
 })();
 document.addEventListener("visibilitychange",()=>{ if(document.hidden && S){ flushSave(); } });
 window.addEventListener("blur",()=>{ if(S){ flushSave(); } });

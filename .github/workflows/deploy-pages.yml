@@ -31,6 +31,7 @@ jobs:
           test -f index.html
           test -f assets/css/app.css
           test -f assets/js/app.js
+          test -f assets/js/sync.js
           test -f sw.js
           echo "Core files present."
 

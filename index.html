@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="CFA v7">
 <meta name="format-detection" content="telephone=no">
-<title>Simple CFA Study Tracker v7.9</title>
+<title>Simple CFA Study Tracker v7.10</title>
 <meta name="author" content="Othman Abdullah">
 <meta name="theme-color" content="#0E1621">
 <link rel="manifest" href="manifest.json">
@@ -17,13 +17,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/app.css?v=7.9.0">
+<link rel="stylesheet" href="assets/css/app.css?v=7.10.0">
 </head>
 <body>
 <div class="wrap">
 
   <header>
-  <h1>Simple CFA Study Tracker <span>v7.9</span></h1>
+  <h1>Simple CFA Study Tracker <span>v7.10</span></h1>
     <div class="exam-row">
       <label class="exam-lab">تاريخ الاختبار
         <input type="date" id="examDateIn">
@@ -44,6 +44,7 @@
       </div>
     </div>
     <div class="bar"><i id="progressBar" style="width:0%"></i></div>
+    <div class="ai-row" id="copyAllHost"></div>
   </section>
 
   <section class="sec readings-sec">
@@ -71,17 +72,55 @@
     <div id="mockList"></div>
   </section>
 
+  <section class="sec sync-sec">
+    <div class="sec-head">
+      <h2>المزامنة بين الأجهزة</h2>
+      <span class="sync-status" id="syncStatus" data-kind="off">غير مفعّلة</span>
+    </div>
+    <p class="sync-hint">
+      شغّلها مرة واحدة على كل جهاز، وبعدها أي تعديل تسوّيه على الجوال يظهر على اللابتوب والعكس.
+      تحتاج قاعدة بيانات Firebase Realtime Database مجانية خاصة فيك — الخطوات في ملف <code>SYNC_SETUP.md</code>.
+      الرابط والرمز يُحفظان على هذا الجهاز فقط ولا يُرفعان إلى GitHub.
+    </p>
+    <div class="sync-form">
+      <label class="sync-lab">رابط قاعدة البيانات
+        <input type="url" id="syncUrl" dir="ltr" spellcheck="false" autocomplete="off"
+               placeholder="https://your-project-default-rtdb.firebaseio.com">
+      </label>
+      <label class="sync-lab">رمز المزامنة السري
+        <input type="text" id="syncCode" dir="ltr" spellcheck="false" autocomplete="off"
+               placeholder="اضغط «توليد رمز»">
+      </label>
+    </div>
+    <div class="sync-tools">
+      <button type="button" id="syncGenBtn">توليد رمز</button>
+      <button type="button" id="syncSaveBtn" class="grow">تفعيل المزامنة</button>
+      <button type="button" id="syncNowBtn">مزامنة الآن</button>
+      <button type="button" id="syncLinkBtn">نسخ رابط ربط جهاز آخر</button>
+      <button type="button" id="syncOffBtn">إيقاف المزامنة</button>
+    </div>
+    <div class="sync-conflict" id="syncConflict" hidden>
+      <p>عدّلت على هذا الجهاز وعلى جهاز ثانٍ بعد آخر مزامنة. اختر النسخة التي تُعتمد
+         (النسخة الأخرى تُحفظ احتياطياً في هذا المتصفح ولا تُفقد):</p>
+      <div class="sync-tools">
+        <button type="button" id="syncKeepLocal">اعتمد بيانات هذا الجهاز</button>
+        <button type="button" id="syncKeepRemote">اعتمد بيانات السحابة</button>
+      </div>
+    </div>
+  </section>
+
   <div class="tools">
     <button class="grow" id="exportBtn">تصدير نسخة احتياطية</button>
     <button id="importBtn">استيراد نسخة احتياطية</button>
     <input type="file" id="importFile" accept="application/json" hidden>
   </div>
 
-  <div class="ver-row"><span class="ver-tag">v7.9.0</span></div>
+  <div class="ver-row"><span class="ver-tag">v7.10.0</span></div>
 
 </div>
 <div id="savedPill">✓ حُفظ</div>
 
-<script src="assets/js/app.js?v=7.9.0" defer></script>
+<script src="assets/js/app.js?v=7.10.0" defer></script>
+<script src="assets/js/sync.js?v=7.10.0" defer></script>
 </body>
 </html>
