@@ -57,7 +57,35 @@ ok("no page/console errors on boot", A._errs.length === 0, A._errs.join(" | "));
 ok("copy-all button rendered", await A.locator(".copy-all-btn").count() === 1);
 ok("sync section rendered, status off", (await A.locator("#syncStatus").textContent()).includes("غير مفعّلة"));
 
-console.log("\nTest 2: the full snapshot covers every part of the app's state");
+console.log("\nTest 2: a reading accepts multiple question sessions with notes");
+await A.locator("#topic-eth .t-group-head").click();
+const sessionCard = A.locator("#topic-eth .r-card").first();
+await sessionCard.locator(".q-sessions > summary").click();
+ok("session panel separates question accuracy from reading mastery", (await sessionCard.locator(".q-sessions-hint").textContent()).includes("لا تعني إتقان الـReading كاملًا"));
+await sessionCard.locator(".q-session-form .qs-name").fill("CFAI تدريب");
+await sessionCard.locator(".q-session-form .qs-scope").fill("جزء DDM");
+await sessionCard.locator(".q-session-form .qs-total").fill("20");
+await sessionCard.locator(".q-session-form .qs-correct").fill("14");
+await sessionCard.locator(".q-session-form .qs-note").fill("أراجع أخطاء تطبيق المعايير");
+await sessionCard.locator(".q-session-form button[type=submit]").click();
+ok("one session is stored under the reading", await A.evaluate(() => S.topics[0].r[0].questionSessions.length === 1));
+ok("session totals and accuracy are rendered", (await sessionCard.locator(".q-sessions-total").textContent()).includes("20 سؤال · 14 صحيحة · 6 خطأ · 70٪"));
+
+await sessionCard.locator(".q-session-form .qs-date").fill("2026-09-13");
+await sessionCard.locator(".q-session-form .qs-name").fill("Kaplan مراجعة");
+await sessionCard.locator(".q-session-form .qs-scope").fill("أسئلة المفاهيم فقط");
+await sessionCard.locator(".q-session-form .qs-total").fill("10");
+await sessionCard.locator(".q-session-form .qs-correct").fill("8");
+await sessionCard.locator(".q-session-form .qs-note").fill("تحسن في فهم المعايير");
+await sessionCard.locator(".q-session-form button[type=submit]").click();
+ok("multiple sessions accumulate", await A.evaluate(() => S.topics[0].r[0].questionSessions.length === 2));
+ok("overall question summary includes the sessions", (await A.locator("#questionSessionsVal").textContent()) === "2" && (await A.locator("#questionAccuracyVal").textContent()) === "73");
+const sessionCopy = await A.evaluate(() => readingSummaryText(S.topics[0], S.topics[0].r[0]));
+ok("reading copy contains session scope, name, and note", sessionCopy.includes("أسئلة المفاهيم فقط") && sessionCopy.includes("Kaplan مراجعة") && sessionCopy.includes("تحسن في فهم المعايير"));
+/* Keep the following snapshot assertions focused on the pre-existing counters. */
+await A.evaluate(() => { S.topics[0].r[0].questionSessions = []; save(); renderAll(); });
+
+console.log("\nTest 3: the full snapshot covers every part of the app's state");
 await A.evaluate(() => {
   S.topics[0].r[0].status = "done";
   S.topics[0].r[0].mastery = "weak";
@@ -82,14 +110,14 @@ ok("snapshot has question totals", full.includes("إجمالي الأسئلة ا
 ok("snapshot has mock average line", full.includes("عدد الاختبارات: 1"));
 ok("snapshot ends with the ask", full.trim().endsWith("حسب ضعفي الفعلي."));
 
-console.log("\nTest 3: the button actually writes that text to the clipboard");
+console.log("\nTest 4: the button actually writes that text to the clipboard");
 await A.locator(".copy-all-btn").click();
 await A.waitForTimeout(300);
 const clip = await A.evaluate(() => navigator.clipboard.readText());
 ok("clipboard holds the full snapshot", clip.includes("ملخص تقدّمي الكامل") && clip.includes("MARKER_NOTE_ONE"));
 ok("button confirms success", (await A.locator(".copy-all-btn").textContent()).includes("تم النسخ"));
 
-console.log("\nTest 4: enabling sync on device A uploads local data");
+console.log("\nTest 5: enabling sync on device A uploads local data");
 await A.locator("#syncUrl").fill("https://fake-default-rtdb.firebasedatabase.app");
 await A.locator("#syncGenBtn").click();
 const code = await A.locator("#syncCode").inputValue();
@@ -100,7 +128,7 @@ ok("device A reports synced", true);
 ok("cloud received the upload", !!cloud && !!cloud.data);
 ok("cloud carries device A's note", JSON.stringify(cloud.data).includes("MARKER_NOTE_ONE"));
 
-console.log("\nTest 5: a second device pairs from the link and pulls the data");
+console.log("\nTest 6: a second device pairs from the link and pulls the data");
 const link = await A.evaluate(() => syncPairLink());
 ok("pair link carries the sync payload", link.includes("#sync="));
 const B = await newPage();
@@ -113,7 +141,7 @@ ok("device B shows A's mock", (await B.evaluate(() => S.mocks.length)) === 1);
 ok("device B stripped the secret from the URL bar", !B.url().includes("#sync="));
 ok("device B re-rendered the adopted state", (await B.locator("#readingsDoneVal").textContent()) === "1");
 
-console.log("\nTest 6: an edit on B flows back to A");
+console.log("\nTest 7: an edit on B flows back to A");
 const waitCloud = async (marker, ms=12000) => {
   const t0 = Date.now();
   while(Date.now() - t0 < ms){
@@ -128,7 +156,7 @@ await A.evaluate(() => window.cfaSync.run());
 await A.waitForTimeout(700);
 ok("device A pulled B's edit", (await A.evaluate(() => S.topics[1].r[0].note)) === "MARKER_FROM_B");
 
-console.log("\nTest 7: simultaneous edits raise a conflict instead of silently losing one");
+console.log("\nTest 8: simultaneous edits raise a conflict instead of silently losing one");
 // device A edits while effectively offline (its auto-push is suppressed), B edits and uploads
 await A.evaluate(() => { window.cfaSync.onLocalChange = () => {}; });
 await A.evaluate(() => { S.topics[2].r[0].note = "MARKER_A_SIDE"; save(); });
@@ -140,7 +168,7 @@ ok("device A flags a conflict", (await A.locator("#syncStatus").getAttribute("da
 ok("conflict chooser is visible", await A.locator("#syncConflict").isVisible());
 ok("A's own edit is untouched while unresolved", (await A.evaluate(() => S.topics[2].r[0].note)) === "MARKER_A_SIDE");
 
-console.log("\nTest 8: choosing the cloud copy adopts it and backs up the local one");
+console.log("\nTest 9: choosing the cloud copy adopts it and backs up the local one");
 await A.locator("#syncKeepRemote").click();
 await A.waitForTimeout(900);
 ok("A now holds B's version", (await A.evaluate(() => S.topics[2].r[0].note)) === "MARKER_B_SIDE");
@@ -148,7 +176,7 @@ ok("pre-sync backup kept A's version",
    (await A.evaluate(() => localStorage.getItem("cfa_l2_pre_sync_backup") || "")).includes("MARKER_A_SIDE"));
 ok("conflict box closed", !(await A.locator("#syncConflict").isVisible()));
 
-console.log("\nTest 9: turning sync off stops the network and keeps local data");
+console.log("\nTest 10: turning sync off stops the network and keeps local data");
 await A.evaluate(() => { window.cfaSync.onLocalChange = syncOnLocalChange; });
 const before = putCount;
 await A.locator("#syncOffBtn").click();
@@ -159,7 +187,7 @@ ok("no upload after disabling", putCount === before, "puts: "+(putCount-before))
 ok("local edit still saved", (await A.evaluate(() => S.topics[4].r[0].note)) === "MARKER_AFTER_OFF");
 ok("status reads off", (await A.locator("#syncStatus").getAttribute("data-kind")) === "off");
 
-console.log("\nTest 10: a bad database URL fails loudly and changes nothing");
+console.log("\nTest 11: a bad database URL fails loudly and changes nothing");
 const C = await newPage();
 await C.route("**/broken-default-rtdb.firebasedatabase.app/**", r => r.fulfill({status:401, body:"denied"}));
 await C.goto(BASE);
@@ -180,7 +208,7 @@ ok("short codes are rejected before any request", await C.evaluate(async () => {
   return !syncCodeValid("tooshort");
 }));
 
-console.log("\nTest 11: an edit typed while an upload is in flight is not swallowed");
+console.log("\nTest 12: an edit typed while an upload is in flight is not swallowed");
 const F = await newPage();
 let held = null;                       // holds the first PUT open until we release it
 await F.route("**/*firebasedatabase.app/**", async route => {
@@ -223,7 +251,7 @@ const landed = await (async () => {
 ok("the edit made mid-upload still reaches the cloud", landed);
 ok("the earlier edit is there too", JSON.stringify(cloud.data).includes("EDIT_BEFORE_PUT"));
 
-console.log("\nTest 12: a cloud stamp from a clock running ahead does not bounce back");
+console.log("\nTest 13: a cloud stamp from a clock running ahead does not bounce back");
 const G = await newPage();
 await G.goto(BASE);
 await G.waitForFunction(() => window.__cfaAppReady === true);
@@ -240,7 +268,7 @@ await G.evaluate(() => window.cfaSync.run());
 await G.waitForTimeout(900);
 ok("no pointless write-back afterwards", putCount === putsAfterAdopt, "extra puts: " + (putCount - putsAfterAdopt));
 
-console.log("\nTest 13: wrong-shaped URLs are named before any request is made");
+console.log("\nTest 14: wrong-shaped URLs are named before any request is made");
 const E = await newPage();
 let reqs = 0;
 const seen = [];
@@ -266,7 +294,7 @@ for(const [url, needle] of cases){
 ok("no network request was attempted for any of them", reqs === 0, seen.join(" | "));
 ok("sync stayed off after every rejection", (await E.locator("#syncStatus").getAttribute("data-kind")) === "off");
 
-console.log("\nTest 14: the pairing link is copied to the clipboard");
+console.log("\nTest 15: the pairing link is copied to the clipboard");
 const D = await newPage();
 await D.goto(BASE);
 await D.waitForFunction(() => window.__cfaAppReady === true);

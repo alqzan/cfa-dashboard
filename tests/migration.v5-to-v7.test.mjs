@@ -1,4 +1,4 @@
-// Acceptance test: v5 -> v6 -> v7 migration must not lose or corrupt any user data.
+// Acceptance test: v5 -> v6 -> v7 -> v8 -> v9 migration must not lose or corrupt any user data.
 // Loads the real fresh()/migrate()/DEFAULT logic straight out of assets/js/app.js
 // (via naive brace-balanced extraction, since app.js is a browser script, not a module)
 // and runs it against representative v5 and v6 save files.
@@ -48,25 +48,25 @@ function check(name, cond) {
   else { fail++; console.error("  FAIL -", name); }
 }
 
-console.log("Test 1: fresh() produces a valid v7 skeleton");
+console.log("Test 1: fresh() produces a valid v9 skeleton");
 {
   const s = fresh();
-  check("v === 7", s.v === 7);
-  check("schemaVersion === 7", s.schemaVersion === 7);
+  check("v === 9", s.v === 9);
+  check("schemaVersion === 9", s.schemaVersion === 9);
   const total = s.topics.reduce((n, t) => n + t.r.length, 0);
   check("45 reading units total", total === 45);
   check("every reading has v6 fields (topicId/stages/sourceMap/brief/closeout) still present", s.topics.every(t => t.r.every(r =>
     r.topicId === t.id && r.stages && r.sourceMap && r.brief && r.closeout && Array.isArray(r.readingPractice)
   )));
-  check("every reading has v7 fields (qGoal/qSolved/qCorrect)", s.topics.every(t => t.r.every(r =>
-    r.qGoal === null && r.qSolved === 0 && r.qCorrect === 0
+  check("every reading has v9 fields (qGoal/qSolved/qCorrect/questionSessions)", s.topics.every(t => t.r.every(r =>
+    r.qGoal === null && r.qSolved === 0 && r.qCorrect === 0 && Array.isArray(r.questionSessions) && r.questionSessions.length === 0
   )));
   const ml = s.topics.find(t => t.id === "qm").r.find(r => r.en === "Machine Learning");
   check("Machine Learning flagged out-of-syllabus (excludedFraction > 0)", ml && ml.excludedFraction > 0);
   check("errors[] and weaknesses[] arrays still exist (kept, unused by v7 UI)", Array.isArray(s.errors) && Array.isArray(s.weaknesses));
 }
 
-console.log("\nTest 2: realistic v5 save migrates all the way to v7 without any data loss");
+console.log("\nTest 2: realistic v5 save migrates all the way to v9 without any data loss");
 {
   const v5 = {
     v: 5,
@@ -94,7 +94,7 @@ console.log("\nTest 2: realistic v5 save migrates all the way to v7 without any 
   const before = JSON.parse(JSON.stringify(v5));
   const after = migrate(JSON.parse(JSON.stringify(v5)));
 
-  check("schemaVersion bumped to 7", after.schemaVersion === 7 && after.v === 7);
+  check("schemaVersion bumped to 9", after.schemaVersion === 9 && after.v === 9);
   check("examDate/target/buffer preserved", after.examDate === before.examDate && after.target === before.target && after.buffer === before.buffer);
   check("dailyLog preserved exactly", JSON.stringify(after.dailyLog) === JSON.stringify(before.dailyLog));
   check("reviews preserved exactly", JSON.stringify(after.reviews) === JSON.stringify(before.reviews));
@@ -121,8 +121,8 @@ console.log("\nTest 2: realistic v5 save migrates all the way to v7 without any 
     r.topicId === t.id && r.stages && r.sourceMap && r.brief && r.closeout && Array.isArray(r.readingPractice)
   )));
   check("errors[]/weaknesses[]/closeoutCfg/deviceId/sync added", Array.isArray(after.errors) && Array.isArray(after.weaknesses) && after.closeoutCfg && after.deviceId && after.sync);
-  check("v7 qGoal/qSolved/qCorrect added additively to every reading", after.topics.every(t => t.r.every(r =>
-    r.qGoal === null && r.qSolved === 0 && r.qCorrect === 0
+  check("v9 question fields added additively to every reading", after.topics.every(t => t.r.every(r =>
+    r.qGoal === null && r.qSolved === 0 && r.qCorrect === 0 && Array.isArray(r.questionSessions) && r.questionSessions.length === 0
   )));
 }
 
@@ -145,6 +145,7 @@ console.log("\nTest 3: a v6 install with a real reading-level question log carri
   const fsa0After = after.topics.find(t => t.id === "fsa").r[0];
   check("v7 qSolved seeded from existing readingPractice total (20+10=30)", fsa0After.qSolved === 30);
   check("v7 qCorrect seeded from existing readingPractice correct (14+8=22)", fsa0After.qCorrect === 22);
+  check("v8 question session history starts as an independent empty log", Array.isArray(fsa0After.questionSessions) && fsa0After.questionSessions.length === 0);
   check("original readingPractice[] entries kept byte-for-byte (no data loss)",
     JSON.stringify(fsa0After.readingPractice) === JSON.stringify(before.topics.find(t => t.id === "fsa").r[0].readingPractice));
   check("status/note untouched by the v7 step", fsa0After.status === "doing" && fsa0After.note === "أعد مراجعة intercorporate investments");

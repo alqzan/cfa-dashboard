@@ -1,10 +1,10 @@
 "use strict";
 
-const APP_VERSION = "7.10.0";
+const APP_VERSION = "7.12.0";
 
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ----------
    Same storage key as v5/v6 on purpose: this is what makes existing users' data load
-   automatically under v7 with zero action from them. Never change this key. */
+   automatically under the current tracker with zero action from them. Never change this key. */
 const KEY = "cfa_l2_dash_v1";
 let _mem = null;
 const store = {
@@ -50,8 +50,8 @@ function validateImportData(o){
   if(!isRecord(o)) return {ok:false, message:"ملف JSON غير صالح: يجب أن يحتوي على كائن بيانات."};
 
   const versions=[o.v,o.schemaVersion].filter(v=>v!==undefined && v!==null);
-  if(versions.some(v=>!Number.isInteger(v) || v<1 || v>7)){
-    return {ok:false, message:"نسخة البيانات غير مدعومة. استخدم ملف v6 أو v7."};
+  if(versions.some(v=>!Number.isInteger(v) || v<1 || v>9)){
+    return {ok:false, message:"نسخة البيانات غير مدعومة. استخدم ملف v6 أو v7 أو v8 أو v9."};
   }
   if(!Array.isArray(o.topics) || o.topics.length!==DEFAULT.topics.length){
     return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: بنية القراءات غير مكتملة."};
@@ -73,6 +73,24 @@ function validateImportData(o){
       if(numericFields.some(key=>reading[key]!==undefined && reading[key]!==null &&
         (typeof reading[key]!=="number" || !Number.isFinite(reading[key])))){
         return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: قيمة رقمية غير صالحة."};
+      }
+      if(reading.questionSessions!==undefined){
+        if(!Array.isArray(reading.questionSessions)){
+          return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: سجل جلسات الأسئلة غير صالح."};
+        }
+        for(const session of reading.questionSessions){
+          if(!isRecord(session) || typeof session.id!=="string" || !session.id.trim() ||
+             typeof session.date!=="string" || !/^\d{4}-\d{2}-\d{2}$/.test(session.date)){
+            return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: تاريخ أو هوية جلسة الأسئلة غير صالح."};
+          }
+          if(["name","scope","note"].some(key=>session[key]!==undefined && session[key]!==null && typeof session[key]!=="string")){
+            return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: تفاصيل جلسة الأسئلة غير صالحة."};
+          }
+          if(!Number.isInteger(session.total) || session.total<1 ||
+             !Number.isInteger(session.correct) || session.correct<0 || session.correct>session.total){
+            return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: عدد أسئلة أو إجابات جلسة الأسئلة غير صالح."};
+          }
+        }
       }
       readingCount++;
     }
@@ -211,7 +229,7 @@ function fresh(){
 }
 function migrate(o){
   const previousVersion = o.v||1;
-  o.v = 7;
+  o.v = 9;
   if(!o.restDays) o.restDays = {};
   if(!o.reviews) o.reviews = {};
   if(o.activeTimer === undefined) o.activeTimer = null;
@@ -229,6 +247,10 @@ function migrate(o){
     t.r.forEach(r=>{
       if(r.note == null) r.note = "";
       if(r.qNote == null) r.qNote = "";
+      if(r.questionSessions === undefined) r.questionSessions = [];
+      if(Array.isArray(r.questionSessions)) r.questionSessions.forEach(s=>{
+        if(s && typeof s === "object" && !Array.isArray(s) && s.scope === undefined) s.scope = "";
+      });
       if(r.spent == null) r.spent = 0;
       if(r.mastery == null) r.mastery = "none"; /* self-rated understanding of the reading */
       if(r.qMastery == null) r.qMastery = "none"; /* self-rated question-solving performance */
@@ -342,6 +364,18 @@ function migrate(o){
       });
     });
   }
+  if(previousVersion<8){
+    /* v7 -> v8 (question practice sessions): purely additive. Existing cumulative
+       qSolved/qCorrect counters stay as the historical baseline; every new session is
+       stored separately under its reading so it can be reviewed, edited, or removed. */
+    o.schemaVersion = 8;
+  }
+  if(previousVersion<9){
+    /* v8 -> v9 (question session scope): purely additive. A session's score describes
+       only the part or question method recorded in scope; it never changes reading mastery. */
+    o.schemaVersion = 9;
+  }
+  if(o.schemaVersion===undefined || o.schemaVersion<9) o.schemaVersion = 9;
   return o;
 }
 
@@ -406,6 +440,31 @@ function allReadingsFlat(){
   return out;
 }
 function findReading(id){ for(const t of S.topics){ const r=t.r.find(x=>x.id===id); if(r) return {t:t,r:r}; } return null; }
+function questionSessionIsUsable(s){
+  return !!(s && typeof s==="object" && typeof s.id==="string" && s.id.trim() &&
+    typeof s.date==="string" && /^\d{4}-\d{2}-\d{2}$/.test(s.date) &&
+    Number.isInteger(s.total) && s.total>0 && Number.isInteger(s.correct) &&
+    s.correct>=0 && s.correct<=s.total);
+}
+function questionSessionAccuracy(s){ return s.total ? Math.round(s.correct/s.total*100) : 0; }
+function questionSessionStats(r){
+  const baseSolved=Number.isFinite(Number(r.qSolved)) ? Math.max(0,Number(r.qSolved)) : 0;
+  const baseCorrect=Number.isFinite(Number(r.qCorrect)) ? Math.max(0,Math.min(baseSolved,Number(r.qCorrect))) : 0;
+  const sessions=(Array.isArray(r.questionSessions)?r.questionSessions:[])
+    .filter(questionSessionIsUsable)
+    .slice()
+    .sort((a,b)=>String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id)));
+  let solved=baseSolved, correct=baseCorrect;
+  sessions.forEach(s=>{ solved+=s.total; correct+=s.correct; });
+  return {
+    sessions,
+    sessionCount:sessions.length,
+    solved,
+    correct,
+    wrong:Math.max(0,solved-correct),
+    accuracy:solved ? Math.round(correct/solved*100) : null
+  };
+}
 
 function readingsTotals(){
   let doneCount=0, total=0;
@@ -436,7 +495,7 @@ function toast(msg, bad){
   clearTimeout(toast._t);
   toast._t=setTimeout(()=>{ p.classList.remove("show"); p.dataset.busy=""; },1800);
 }
-function armConfirm(btn, fn){
+function armConfirm(btn, fn, confirmText){
   if(btn.dataset.arm==="1"){
     btn.dataset.arm="";
     btn.textContent=btn.dataset.oldText||btn.textContent;
@@ -448,7 +507,7 @@ function armConfirm(btn, fn){
   btn.dataset.arm="1";
   const old=btn.textContent;
   btn.dataset.oldText=old;
-  btn.textContent="تأكيد الاستبدال؟"; btn.classList.add("armed");
+  btn.textContent=confirmText||"تأكيد الاستبدال؟"; btn.classList.add("armed");
   setTimeout(()=>{ if(btn.dataset.arm==="1"){
     btn.dataset.arm="";
     btn.textContent=old;
@@ -462,10 +521,14 @@ function renderSummary(){
   $("#examDateIn").value = S.examDate;
   $("#examDaysVal").textContent = examDaysLeft();
   const R=readingsTotals();
+  const q=questionTotals();
   $("#progressPctVal").textContent = Math.round(R.pct);
   $("#progressBar").style.width = R.pct+"%";
   $("#readingsDoneVal").textContent = R.doneCount;
   $("#readingsTotalVal").textContent = R.total;
+  $("#questionSessionsVal").textContent = q.sessions;
+  $("#questionAccuracyVal").textContent = q.pct===null ? "—" : q.pct;
+  $("#questionAccuracyUnit").hidden = q.pct===null;
 }
 
 /* ---------- finalize any timer left dangling from before the manual timer was removed ----------
@@ -542,6 +605,144 @@ function ratingGroup(label, getVal, setVal){
   wrap._update=update;
   return wrap;
 }
+function questionSessionForm(r, existing){
+  const form=document.createElement("form"); form.className="q-session-form";
+
+  const dateField=document.createElement("label"); dateField.className="qs-field";
+  dateField.appendChild(document.createTextNode("التاريخ"));
+  const dateInput=document.createElement("input"); dateInput.type="date"; dateInput.className="qs-date";
+  dateInput.required=true; dateInput.value=existing ? (existing.date||todayKey()) : todayKey();
+  dateField.appendChild(dateInput);
+
+  const nameField=document.createElement("label"); nameField.className="qs-field";
+  nameField.appendChild(document.createTextNode("اسم الجلسة أو المصدر (اختياري)"));
+  const nameInput=document.createElement("input"); nameInput.type="text"; nameInput.className="qs-name";
+  nameInput.placeholder="مثال: CFAI بنك الأسئلة"; nameInput.value=existing ? (existing.name||"") : "";
+  nameField.appendChild(nameInput);
+
+  const scopeField=document.createElement("label"); scopeField.className="qs-field qs-field-scope";
+  scopeField.appendChild(document.createTextNode("نطاق أو طريقة الأسئلة (اختياري)"));
+  const scopeInput=document.createElement("input"); scopeInput.type="text"; scopeInput.className="qs-scope";
+  scopeInput.placeholder="مثال: جزء DDM أو أسئلة المفاهيم فقط"; scopeInput.value=existing ? (existing.scope||"") : "";
+  scopeField.appendChild(scopeInput);
+
+  const totalField=document.createElement("label"); totalField.className="qs-field";
+  totalField.appendChild(document.createTextNode("عدد الأسئلة"));
+  const totalInput=document.createElement("input"); totalInput.type="number"; totalInput.className="qs-total";
+  totalInput.min="1"; totalInput.step="1"; totalInput.required=true;
+  totalInput.placeholder="مثال: 20"; totalInput.value=existing ? existing.total : "";
+  totalField.appendChild(totalInput);
+
+  const correctField=document.createElement("label"); correctField.className="qs-field";
+  correctField.appendChild(document.createTextNode("الإجابات الصحيحة"));
+  const correctInput=document.createElement("input"); correctInput.type="number"; correctInput.className="qs-correct";
+  correctInput.min="0"; correctInput.step="1"; correctInput.required=true;
+  correctInput.placeholder="مثال: 14"; correctInput.value=existing ? existing.correct : "";
+  correctField.appendChild(correctInput);
+  const refreshCorrectMax=()=>{ correctInput.max=totalInput.value||""; };
+  totalInput.addEventListener("input",refreshCorrectMax);
+  refreshCorrectMax();
+
+  const noteFieldWrap=document.createElement("label"); noteFieldWrap.className="qs-field qs-field-note";
+  noteFieldWrap.appendChild(document.createTextNode("ملاحظات الجلسة"));
+  const noteInput=document.createElement("textarea"); noteInput.className="qs-note"; noteInput.rows=2;
+  noteInput.placeholder="ما الأخطاء أو القواعد التي تحتاج مراجعة؟"; noteInput.value=existing ? (existing.note||"") : "";
+  noteFieldWrap.appendChild(noteInput);
+
+  const actions=document.createElement("div"); actions.className="q-session-form-actions";
+  const submit=document.createElement("button"); submit.type="submit"; submit.className="grow";
+  submit.textContent=existing ? "حفظ التعديل" : "إضافة الجلسة";
+  actions.appendChild(submit);
+  if(existing){
+    const cancel=document.createElement("button"); cancel.type="button"; cancel.textContent="إلغاء";
+    cancel.onclick=()=>renderReadings();
+    actions.appendChild(cancel);
+  }
+
+  form.appendChild(dateField); form.appendChild(nameField); form.appendChild(totalField); form.appendChild(correctField);
+  form.appendChild(scopeField);
+  form.appendChild(noteFieldWrap); form.appendChild(actions);
+  form.addEventListener("submit", e=>{
+    e.preventDefault();
+    const total=Number(totalInput.value), correct=Number(correctInput.value);
+    if(!dateInput.value){ toast("اختر تاريخ الجلسة", true); return; }
+    if(!Number.isInteger(total) || total<1){ toast("أدخل عدد أسئلة صحيحاً وأكبر من صفر", true); return; }
+    if(!Number.isInteger(correct) || correct<0 || correct>total){
+      toast("الإجابات الصحيحة يجب أن تكون بين صفر وإجمالي الأسئلة", true); return;
+    }
+    const values={date:dateInput.value, name:nameInput.value.trim(), scope:scopeInput.value.trim(), total:total, correct:correct, note:noteInput.value.trim()};
+    if(existing){
+      Object.assign(existing, values);
+    }else{
+      if(!Array.isArray(r.questionSessions)) r.questionSessions=[];
+      r.questionSessions.unshift({
+        id:"qs-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8),
+        ...values
+      });
+    }
+    save();
+    renderReadings();
+    renderSummary();
+    toast(existing ? "تم تعديل جلسة الأسئلة" : "تم حفظ جلسة الأسئلة");
+  });
+  return form;
+}
+function questionSessionRow(r, session){
+  const row=document.createElement("article"); row.className="q-session-row";
+  const head=document.createElement("div"); head.className="q-session-row-head";
+  const date=document.createElement("span"); date.className="qs-date-text mono"; date.textContent=fmtDate(session.date);
+  const name=document.createElement("strong"); name.className="qs-name-text"; name.textContent=session.name||"جلسة أسئلة";
+  head.appendChild(date); head.appendChild(name);
+  const stats=document.createElement("div"); stats.className="q-session-stats mono";
+  stats.textContent=session.total+" سؤال · "+session.correct+" صحيحة · "+(session.total-session.correct)+" خطأ · "+questionSessionAccuracy(session)+"٪";
+  row.appendChild(head); row.appendChild(stats);
+  if((session.scope||"").trim()){
+    const scope=document.createElement("p"); scope.className="q-session-scope"; scope.textContent="النطاق/الطريقة: "+session.scope.trim();
+    row.appendChild(scope);
+  }
+  if((session.note||"").trim()){
+    const note=document.createElement("p"); note.className="q-session-note"; note.textContent=session.note.trim();
+    row.appendChild(note);
+  }
+  const actions=document.createElement("div"); actions.className="q-session-actions";
+  const edit=document.createElement("button"); edit.type="button"; edit.className="q-session-edit"; edit.textContent="تعديل";
+  edit.onclick=()=>{ row.replaceChildren(questionSessionForm(r,session)); };
+  const del=document.createElement("button"); del.type="button"; del.className="q-session-delete"; del.textContent="حذف";
+  del.onclick=()=>armConfirm(del, ()=>{
+    r.questionSessions=r.questionSessions.filter(s=>s.id!==session.id);
+    save(); renderReadings(); renderSummary(); toast("تم حذف جلسة الأسئلة");
+  }, "تأكيد الحذف؟");
+  actions.appendChild(edit); actions.appendChild(del); row.appendChild(actions);
+  return row;
+}
+function questionSessionsPanel(r){
+  const stats=questionSessionStats(r);
+  const panel=document.createElement("details"); panel.className="q-sessions"; panel.open=stats.sessionCount>0;
+  const summary=document.createElement("summary");
+  const title=document.createElement("span"); title.className="q-sessions-title"; title.textContent="جلسات الأسئلة";
+  const count=document.createElement("span"); count.className="q-sessions-count"; count.textContent=stats.sessionCount+" جلسة";
+  summary.appendChild(title); summary.appendChild(count); panel.appendChild(summary);
+  const body=document.createElement("div"); body.className="q-sessions-body";
+  const hint=document.createElement("p"); hint.className="q-sessions-hint";
+  hint.textContent="تنبيه: دقة الجلسة تخص الجزء أو طريقة الأسئلة المكتوبة هنا فقط، ولا تعني إتقان الـReading كاملًا. تقييم فهم القراءة مستقل أعلاه.";
+  body.appendChild(hint);
+  const totalLine=document.createElement("div"); totalLine.className="q-sessions-total";
+  totalLine.textContent=stats.solved ?
+    "الإجمالي: "+stats.solved+" سؤال · "+stats.correct+" صحيحة · "+stats.wrong+" خطأ · "+stats.accuracy+"٪" :
+    "لم تسجل أسئلة لهذه القراءة بعد";
+  body.appendChild(totalLine);
+  const addTitle=document.createElement("div"); addTitle.className="q-session-add-title"; addTitle.textContent="إضافة جلسة جديدة";
+  body.appendChild(addTitle); body.appendChild(questionSessionForm(r));
+  const list=document.createElement("div"); list.className="q-session-list";
+  if(stats.sessionCount){
+    stats.sessions.forEach(session=>list.appendChild(questionSessionRow(r,session)));
+  }else{
+    const empty=document.createElement("p"); empty.className="q-session-empty"; empty.textContent="سجّل أول جلسة هنا، وخلّ ملاحظاتك مرتبطة بالقراءة نفسها.";
+    list.appendChild(empty);
+  }
+  body.appendChild(list); panel.appendChild(body);
+  return panel;
+}
 function noteField(label, r, key){
   const wrap=document.createElement("label"); wrap.className="r-notewrap";
   const lab=document.createElement("span"); lab.textContent=label;
@@ -608,6 +809,7 @@ function topicHeaderLines(t){
 /* one reading's own state; `prefix` numbers it when several are listed together */
 function readingDetailLines(r, prefix){
   const title=(r.en||"").trim() || (r.ar||"").trim() || "قراءة بدون اسم";
+  const q=questionSessionStats(r);
   const L=[];
   L.push((prefix||"")+"القراءة"+(r.readingNo==null?"":" رقم "+r.readingNo)+": "+title);
   if(r.ar && r.en) L.push("الاسم بالعربي: "+r.ar);
@@ -621,10 +823,20 @@ function readingDetailLines(r, prefix){
   L.push("تقييم حلّي للأسئلة: "+rateText(r.qMastery));
   L.push("ملاحظات الأسئلة:");
   L.push(noteText(r.qNote));
-  if(r.qSolved){
-    const acc=Math.round((r.qCorrect||0)/r.qSolved*100);
+  if(q.solved || q.sessionCount){
     L.push("");
-    L.push("الأسئلة المحلولة: "+r.qSolved+" — صحيحة: "+(r.qCorrect||0)+" ("+acc+"٪)"+(r.qGoal?" — الهدف: "+r.qGoal:""));
+    L.push("إجمالي الأسئلة المحلولة: "+q.solved+" — صحيحة: "+q.correct+" — خطأ: "+q.wrong+" ("+q.accuracy+"٪)"+(r.qGoal?" — الهدف: "+r.qGoal:""));
+  }
+  if(q.sessionCount){
+    L.push("تنبيه: دقة كل جلسة تخص الجزء أو طريقة الأسئلة المسجّلة فيها فقط، ولا تعني إتقان القراءة كاملة.");
+    L.push("عدد جلسات الأسئلة: "+q.sessionCount);
+    L.push("سجل الجلسات:");
+    q.sessions.forEach(s=>{
+      const name=(s.name||"").trim() || "جلسة أسئلة";
+      const scope=(s.scope||"").trim();
+      L.push("• "+fmtDate(s.date)+" — "+name+(scope ? " — النطاق/الطريقة: "+scope : "")+" — "+s.total+" سؤال — "+s.correct+" صحيحة — "+(s.total-s.correct)+" خطأ ("+questionSessionAccuracy(s)+"٪)");
+      if((s.note||"").trim()) L.push("  ملاحظات الجلسة: "+s.note.trim());
+    });
   }
   if(r.excludedFraction && (r.excludedNote||"").trim()){
     L.push("");
@@ -674,7 +886,7 @@ function makeCopyBtn(cls, label, title, buildText, okToast){
 function copyButton(t,r){
   return makeCopyBtn(
     "r-copy-btn", "نسخ إلى ابو جبت",
-    "نسخ حالة هذه القراءة كاملة (ملاحظاتي وتقييماتي) للصقها في ChatGPT",
+    "نسخ حالة هذه القراءة كاملة (ملاحظاتي وتقييماتي ونطاق جلسات الأسئلة) للصقها في ChatGPT",
     ()=>readingSummaryText(t,r),
     "تم نسخ ملخص القراءة — الصقه في ابو جبت"
   );
@@ -687,9 +899,12 @@ function statusCounts(){
   return c;
 }
 function questionTotals(){
-  let solved=0, correct=0;
-  allReadingsFlat().forEach(({r})=>{ solved+=r.qSolved||0; correct+=r.qCorrect||0; });
-  return {solved, correct, pct: solved ? Math.round(correct/solved*100) : null};
+  let solved=0, correct=0, sessions=0;
+  allReadingsFlat().forEach(({r})=>{
+    const q=questionSessionStats(r);
+    solved+=q.solved; correct+=q.correct; sessions+=q.sessionCount;
+  });
+  return {solved, correct, sessions, pct: solved ? Math.round(correct/solved*100) : null};
 }
 /* "weak" = I rated either the reading itself or my question-solving as weak */
 function weakReadings(){
@@ -701,6 +916,7 @@ function overviewLines(){
   L.push("عدد الأقسام: "+S.topics.length+" — إجمالي القراءات: "+R.total);
   L.push("حالة القراءات: مكتملة "+(c.done||0)+" — أذاكرها الآن "+(c.doing||0)+" — لم أبدأ "+(c.todo||0));
   L.push("قراءات قيّمتها ضعيفة (تحتاج مراجعة): "+weak.length);
+  L.push("جلسات الأسئلة المسجّلة: "+q.sessions);
   if(q.solved) L.push("إجمالي الأسئلة المحلولة: "+q.solved+" — صحيحة: "+q.correct+" ("+q.pct+"٪)");
   else L.push("إجمالي الأسئلة المحلولة: لم أسجّل أي أسئلة بعد");
   return L;
@@ -786,7 +1002,7 @@ function fullSummaryText(){
 function copyAllButton(){
   return makeCopyBtn(
     "copy-all-btn", "نسخ كل تقدّمي إلى ابو جبت",
-    "نسخ كل تقدّمي كاملاً (كل الأقسام والقراءات والملاحظات والتقييمات والاختبارات) للصقه في ChatGPT",
+    "نسخ كل تقدّمي كاملاً (كل الأقسام والقراءات والملاحظات والتقييمات ونطاق جلسات الأسئلة والاختبارات) للصقه في ChatGPT",
     fullSummaryText,
     "تم نسخ كل تقدّمي — الصقه في ابو جبت"
   );
@@ -802,7 +1018,9 @@ function copyTopicButton(t){
 
 function readingMatchesQuery(t,r){
   if(!QUERY) return true;
-  const hay=norm((r.en||"")+" "+(r.ar||"")+" "+(t.en||"")+" "+(t.ar||""));
+  const sessionHay=(Array.isArray(r.questionSessions)?r.questionSessions:[])
+    .map(s=>(s.name||"")+" "+(s.scope||"")+" "+(s.note||"")).join(" ");
+  const hay=norm((r.en||"")+" "+(r.ar||"")+" "+(t.en||"")+" "+(t.ar||"")+" "+sessionHay);
   return hay.indexOf(QUERY)!==-1;
 }
 function bindField(el, get, set){
@@ -854,6 +1072,7 @@ function readingCard(t,r,onFlagChange){
   pairs.appendChild(qPair);
 
   card.appendChild(pairs);
+  card.appendChild(questionSessionsPanel(r));
 
   const actions=document.createElement("div"); actions.className="r-actions";
   actions.appendChild(copyButton(t,r));
@@ -934,7 +1153,7 @@ function renderReadings(){
         note:"", qNote:"", spent:0, topicId:t.id, readingNo:null, excludedFraction:0, excludedNote:"",
         stages:defaultStages(), sourceMap:defaultSourceMap(), pages:{mark:"",schweser:"",cfai:"",secretSauce:""},
         brief:defaultBrief(), readingPractice:[], closeout:{status:"open",closedAt:null},
-        qGoal:null, qSolved:0, qCorrect:0
+        qGoal:null, qSolved:0, qCorrect:0, questionSessions:[]
       });
       openTopics.add(t.id); saveUiPrefs();
       save(); renderReadings(); renderSummary();
