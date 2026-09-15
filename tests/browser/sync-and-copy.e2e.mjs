@@ -82,7 +82,7 @@ ok("multiple sessions accumulate", await A.evaluate(() => S.topics[0].r[0].quest
 ok("overall question summary includes the sessions", (await A.locator("#questionSessionsVal").textContent()) === "2" && (await A.locator("#questionAccuracyVal").textContent()) === "73");
 const sessionCopy = await A.evaluate(() => readingSummaryText(S.topics[0], S.topics[0].r[0]));
 ok("reading copy contains session scope, name, and note", sessionCopy.includes("أسئلة المفاهيم فقط") && sessionCopy.includes("Kaplan مراجعة") && sessionCopy.includes("تحسن في فهم المعايير"));
-/* Keep the following snapshot assertions focused on the pre-existing counters. */
+/* Reset the first reading, then seed one current-format session for the snapshot checks. */
 await A.evaluate(() => { S.topics[0].r[0].questionSessions = []; save(); renderAll(); });
 
 console.log("\nTest 3: the full snapshot covers every part of the app's state");
@@ -91,7 +91,7 @@ await A.evaluate(() => {
   S.topics[0].r[0].mastery = "weak";
   S.topics[0].r[0].note = "MARKER_NOTE_ONE";
   S.topics[0].r[0].qMastery = "strong";
-  S.topics[0].r[0].qSolved = 40; S.topics[0].r[0].qCorrect = 30;
+  S.topics[0].r[0].questionSessions = [{ id:"snapshot-qs", date:"2026-09-14", name:"Snapshot", scope:"جزء محدد", total:40, correct:30, note:"MARKER_SESSION_NOTE" }];
   S.topics[3].r[1].qNote = "MARKER_QNOTE_TWO";
   S.topics[3].r[1].status = "doing";
   S.mocks = [{id:"m1", date:"2026-09-01", name:"MARKER_MOCK", score:71.5, note:"MARKER_MOCK_NOTE"}];
@@ -106,7 +106,8 @@ ok("snapshot lists every reading ("+totalReadings+")", (full.match(/^\[\d+\/\d+\
 ok("snapshot lists all 10 topic headers", (full.match(/^══════ /gm)||[]).length === 10);
 ok("snapshot names the weak reading", full.includes("فهم القراءة ضعيف"));
 ok("snapshot has overall status counts", /حالة القراءات: مكتملة 1 — أذاكرها الآن 1/.test(full));
-ok("snapshot has question totals", full.includes("إجمالي الأسئلة المحلولة: 40 — صحيحة: 30 (75٪)"));
+ok("snapshot has question totals from sessions", full.includes("إجمالي أسئلة الجلسات: 40 — صحيحة: 30 (75٪)"));
+ok("snapshot omits retired hour tracking", !full.includes("الوقت التقديري") && !full.includes("الهدف: 2000"));
 ok("snapshot has mock average line", full.includes("عدد الاختبارات: 1"));
 ok("snapshot ends with the ask", full.trim().endsWith("حسب ضعفي الفعلي."));
 

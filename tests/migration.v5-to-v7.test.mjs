@@ -1,4 +1,4 @@
-// Acceptance test: v5 -> v6 -> v7 -> v8 -> v9 migration must not lose or corrupt any user data.
+// Acceptance test: legacy data migrates to v10 while retired hour/question tracking is removed.
 // Loads the real fresh()/migrate()/DEFAULT logic straight out of assets/js/app.js
 // (via naive brace-balanced extraction, since app.js is a browser script, not a module)
 // and runs it against representative v5 and v6 save files.
@@ -48,25 +48,26 @@ function check(name, cond) {
   else { fail++; console.error("  FAIL -", name); }
 }
 
-console.log("Test 1: fresh() produces a valid v9 skeleton");
+console.log("Test 1: fresh() produces a valid v10 skeleton");
 {
   const s = fresh();
-  check("v === 9", s.v === 9);
-  check("schemaVersion === 9", s.schemaVersion === 9);
+  check("v === 10", s.v === 10);
+  check("schemaVersion === 10", s.schemaVersion === 10);
   const total = s.topics.reduce((n, t) => n + t.r.length, 0);
   check("45 reading units total", total === 45);
-  check("every reading has v6 fields (topicId/stages/sourceMap/brief/closeout) still present", s.topics.every(t => t.r.every(r =>
-    r.topicId === t.id && r.stages && r.sourceMap && r.brief && r.closeout && Array.isArray(r.readingPractice)
+  check("every reading keeps useful v6 metadata", s.topics.every(t => t.r.every(r =>
+    r.topicId === t.id && r.stages && r.sourceMap && r.brief && r.closeout
   )));
-  check("every reading has v9 fields (qGoal/qSolved/qCorrect/questionSessions)", s.topics.every(t => t.r.every(r =>
-    r.qGoal === null && r.qSolved === 0 && r.qCorrect === 0 && Array.isArray(r.questionSessions) && r.questionSessions.length === 0
+  check("every reading has only the new empty session log", s.topics.every(t => t.r.every(r =>
+    Array.isArray(r.questionSessions) && r.questionSessions.length === 0 &&
+    r.hrs === undefined && r.spent === undefined && r.qGoal === undefined && r.qSolved === undefined && r.qCorrect === undefined
   )));
   const ml = s.topics.find(t => t.id === "qm").r.find(r => r.en === "Machine Learning");
   check("Machine Learning flagged out-of-syllabus (excludedFraction > 0)", ml && ml.excludedFraction > 0);
   check("errors[] and weaknesses[] arrays still exist (kept, unused by v7 UI)", Array.isArray(s.errors) && Array.isArray(s.weaknesses));
 }
 
-console.log("\nTest 2: realistic v5 save migrates all the way to v9 without any data loss");
+console.log("\nTest 2: realistic v5 save migrates to v10 and removes retired trackers");
 {
   const v5 = {
     v: 5,
@@ -94,16 +95,16 @@ console.log("\nTest 2: realistic v5 save migrates all the way to v9 without any 
   const before = JSON.parse(JSON.stringify(v5));
   const after = migrate(JSON.parse(JSON.stringify(v5)));
 
-  check("schemaVersion bumped to 9", after.schemaVersion === 9 && after.v === 9);
-  check("examDate/target/buffer preserved", after.examDate === before.examDate && after.target === before.target && after.buffer === before.buffer);
-  check("dailyLog preserved exactly", JSON.stringify(after.dailyLog) === JSON.stringify(before.dailyLog));
+  check("schemaVersion bumped to 10", after.schemaVersion === 10 && after.v === 10);
+  check("examDate remains while target/buffer are removed", after.examDate === before.examDate && after.target === undefined && after.buffer === undefined);
+  check("dailyLog is removed", after.dailyLog === undefined);
   check("reviews preserved exactly", JSON.stringify(after.reviews) === JSON.stringify(before.reviews));
-  check("practice (legacy topic-level) preserved exactly", JSON.stringify(after.practice) === JSON.stringify(before.practice));
+  check("practice (legacy topic-level) is removed", after.practice === undefined);
   check("mocks preserved exactly", JSON.stringify(after.mocks) === JSON.stringify(before.mocks));
-  check("sessions preserved exactly", JSON.stringify(after.sessions) === JSON.stringify(before.sessions));
+  check("timer sessions are removed", after.sessions === undefined);
   check("celebrated preserved exactly", JSON.stringify(after.celebrated) === JSON.stringify(before.celebrated));
   check("restDays preserved exactly", JSON.stringify(after.restDays) === JSON.stringify(before.restDays));
-  check("qGoal/lastExport preserved", after.qGoal === before.qGoal && after.lastExport === before.lastExport);
+  check("lastExport remains while qGoal is removed", after.qGoal === undefined && after.lastExport === before.lastExport);
 
   const total = after.topics.reduce((n, t) => n + t.r.length, 0);
   check("still 45 reading units (none dropped/renamed)", total === 45);
@@ -113,22 +114,23 @@ console.log("\nTest 2: realistic v5 save migrates all the way to v9 without any 
   }));
 
   const eth0After = after.topics.find(t => t.id === "eth").r[0];
-  check("user's status/mastery/note/spent on completed reading survive untouched",
+  check("user's status/mastery/note survive while spent is removed",
     eth0After.status === "done" && eth0After.mastery === "strong" &&
-    eth0After.note === "راجع Standard I-VII مرة أخرى" && eth0After.spent === 7.5);
+    eth0After.note === "راجع Standard I-VII مرة أخرى" && eth0After.spent === undefined);
 
   check("v6 fields added additively to every reading", after.topics.every(t => t.r.every(r =>
-    r.topicId === t.id && r.stages && r.sourceMap && r.brief && r.closeout && Array.isArray(r.readingPractice)
+    r.topicId === t.id && r.stages && r.sourceMap && r.brief && r.closeout
   )));
   check("errors[]/weaknesses[]/closeoutCfg/deviceId/sync added", Array.isArray(after.errors) && Array.isArray(after.weaknesses) && after.closeoutCfg && after.deviceId && after.sync);
-  check("v9 question fields added additively to every reading", after.topics.every(t => t.r.every(r =>
-    r.qGoal === null && r.qSolved === 0 && r.qCorrect === 0 && Array.isArray(r.questionSessions) && r.questionSessions.length === 0
+  check("legacy reading/question fields are absent and session logs are ready", after.topics.every(t => t.r.every(r =>
+    r.readingPractice === undefined && r.qGoal === undefined && r.qSolved === undefined && r.qCorrect === undefined &&
+    Array.isArray(r.questionSessions) && r.questionSessions.length === 0
   )));
 }
 
-console.log("\nTest 3: a v6 install with a real reading-level question log carries totals into v7's simple counters, and keeps the original log");
+console.log("\nTest 3: a v6 reading-level question log is retired without touching current notes");
 {
-  // build a genuine pre-v7 (schemaVersion 6) shape: no qGoal/qSolved/qCorrect yet
+  // build a genuine pre-v10 (schemaVersion 6) shape with the retired question log
   const v6 = migrate(JSON.parse(JSON.stringify(fresh())));
   v6.v = 6; v6.schemaVersion = 6;
   const fsa0 = v6.topics.find(t => t.id === "fsa").r[0];
@@ -143,12 +145,10 @@ console.log("\nTest 3: a v6 install with a real reading-level question log carri
   const after = migrate(JSON.parse(JSON.stringify(v6)));
 
   const fsa0After = after.topics.find(t => t.id === "fsa").r[0];
-  check("v7 qSolved seeded from existing readingPractice total (20+10=30)", fsa0After.qSolved === 30);
-  check("v7 qCorrect seeded from existing readingPractice correct (14+8=22)", fsa0After.qCorrect === 22);
-  check("v8 question session history starts as an independent empty log", Array.isArray(fsa0After.questionSessions) && fsa0After.questionSessions.length === 0);
-  check("original readingPractice[] entries kept byte-for-byte (no data loss)",
-    JSON.stringify(fsa0After.readingPractice) === JSON.stringify(before.topics.find(t => t.id === "fsa").r[0].readingPractice));
-  check("status/note untouched by the v7 step", fsa0After.status === "doing" && fsa0After.note === "أعد مراجعة intercorporate investments");
+  check("legacy question counters are absent", fsa0After.qSolved === undefined && fsa0After.qCorrect === undefined);
+  check("legacy readingPractice log is removed", fsa0After.readingPractice === undefined);
+  check("new session history is ready for fresh entries", Array.isArray(fsa0After.questionSessions) && fsa0After.questionSessions.length === 0);
+  check("status/note remain untouched", fsa0After.status === "doing" && fsa0After.note === "أعد مراجعة intercorporate investments");
 }
 
 console.log("\nTest 4: migrating twice is idempotent (re-running migrate doesn't duplicate/reset anything)");

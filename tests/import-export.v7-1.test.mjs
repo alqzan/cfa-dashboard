@@ -1,5 +1,5 @@
-// Acceptance test: the v7.1 import guard accepts a complete v6/v7 export,
-// preserves the user's records through migration, and rejects incomplete data.
+// Acceptance test: the import guard accepts legacy exports, cleans retired tracking,
+// preserves the current session model, and rejects incomplete data.
 
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -49,7 +49,7 @@ function check(name, cond) {
   else { fail++; console.error("  FAIL -", name); }
 }
 
-console.log("Test 1: v7.1 validates and round-trips a complete export");
+console.log("Test 1: a legacy export is accepted and cleaned on import");
 {
   const source = fresh();
   const first = source.topics[0].r[0];
@@ -74,12 +74,12 @@ console.log("Test 1: v7.1 validates and round-trips a complete export");
   check("complete export is accepted", validation.ok === true);
   check("45 reading units remain", total === 45);
   check("last note text remains", importedFirst.note === "آخر حرف محفوظ ✓");
-  check("question counters remain", importedFirst.qGoal === 250 && importedFirst.qSolved === 123 && importedFirst.qCorrect === 97);
+  check("legacy question counters are removed", importedFirst.qGoal === undefined && importedFirst.qSolved === undefined && importedFirst.qCorrect === undefined);
   check("question sessions remain", JSON.stringify(importedFirst.questionSessions) === JSON.stringify(source.topics[0].r[0].questionSessions));
-  check("reading hours remain", importedFirst.spent === 12.5 && imported.dailyLog["2026-08-01"] === 12.5);
-  check("legacy question totals remain", imported.practice["2026-08-01"].eth.a === 20 && imported.practice["2026-08-01"].eth.c === 15);
+  check("reading hours are removed", importedFirst.spent === undefined && imported.dailyLog === undefined);
+  check("legacy question totals are removed", imported.practice === undefined);
   check("mock exams remain", JSON.stringify(imported.mocks) === JSON.stringify(source.mocks));
-  check("timer sessions remain under the selected reading", imported.sessions[0].id === first.id && imported.sessions[0].m === 45);
+  check("timer sessions are removed", imported.sessions === undefined);
 }
 
 console.log("\nTest 2: incomplete or malformed JSON is rejected before replacement");
@@ -95,7 +95,7 @@ console.log("\nTest 2: incomplete or malformed JSON is rejected before replaceme
   check("malformed JSON is rejected", invalidJsonRejected);
 }
 
-console.log("\nTest 3: a v6-shaped export is accepted and migrated additively");
+console.log("\nTest 3: a v6-shaped export is accepted and migrated to the session-only model");
 {
   const v6 = migrate(JSON.parse(JSON.stringify(fresh())));
   v6.v = 6;
@@ -110,7 +110,7 @@ console.log("\nTest 3: a v6-shaped export is accepted and migrated additively");
   const imported = migrate(JSON.parse(JSON.stringify(v6)));
   const reading = imported.topics[1].r[0];
   check("v6 file is accepted", validation.ok === true);
-  check("v6 question history is migrated", reading.qSolved === 30 && reading.qCorrect === 22);
+  check("v6 question history is retired", reading.readingPractice === undefined && reading.qSolved === undefined && reading.qCorrect === undefined);
   check("v6 reading metadata remains", reading.note === "" && reading.id === v6.topics[1].r[0].id);
 }
 

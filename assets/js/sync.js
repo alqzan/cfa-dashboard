@@ -231,7 +231,6 @@ function syncHasLocalProgress(){
       if(r.qMastery && r.qMastery !== "none") return true;
       /* excludedNote is a syllabus note migrate() writes on every install — not my progress */
       if((r.note||"").trim() || (r.qNote||"").trim()) return true;
-      if(r.qSolved || r.qCorrect || r.spent) return true;
       if(Array.isArray(r.questionSessions) && r.questionSessions.length) return true;
     }
   }

@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_VERSION = "7.12.0";
+const APP_VERSION = "7.13.0";
 
 /* ---------- tiered storage: Claude window.storage -> localStorage -> memory ----------
    Same storage key as v5/v6 on purpose: this is what makes existing users' data load
@@ -50,8 +50,8 @@ function validateImportData(o){
   if(!isRecord(o)) return {ok:false, message:"ملف JSON غير صالح: يجب أن يحتوي على كائن بيانات."};
 
   const versions=[o.v,o.schemaVersion].filter(v=>v!==undefined && v!==null);
-  if(versions.some(v=>!Number.isInteger(v) || v<1 || v>9)){
-    return {ok:false, message:"نسخة البيانات غير مدعومة. استخدم ملف v6 أو v7 أو v8 أو v9."};
+  if(versions.some(v=>!Number.isInteger(v) || v<1 || v>10)){
+    return {ok:false, message:"نسخة البيانات غير مدعومة. استخدم ملفاً من v1 إلى v10."};
   }
   if(!Array.isArray(o.topics) || o.topics.length!==DEFAULT.topics.length){
     return {ok:false, message:"ملف النسخة الاحتياطية غير متوافق: بنية القراءات غير مكتملة."};
@@ -127,73 +127,71 @@ async function saveImportBackup(current){
 }
 
 /* ---------- default curriculum (2026, 45 modules) ----------
-   weights are official ranges; kept from v6 unchanged — do not edit reading data here
-   without the user's explicit request, existing installs already have their own copies
-   of this in storage and only ever get additive migrations. */
+   weights are official ranges; reading names and IDs stay stable so existing installs
+   can migrate without losing the user's reading-level notes. */
 const DEFAULT = {
-  examDate:"2026-11-19", target:2.0, buffer:21, dailyLog:{}, reviews:{}, activeTimer:null,
-  practice:{}, mocks:[], sessions:[], qGoal:2000, lastExport:null, celebrated:{}, planCfg:null, restDays:{},
+  examDate:"2026-11-19", reviews:{}, mocks:[], lastExport:null, celebrated:{}, planCfg:null, restDays:{},
   topics:[
    {id:"eth",ar:"الأخلاقيات والمعايير المهنية",en:"Ethics & Professional Standards",abbr:"ETH",wMin:10,wMax:15,r:[
-     ["مراجعة مدونة الأخلاقيات والمعايير","Code & Standards Review",8],
-     ["إرشادات المعايير I–VII (تطبيق معمّق)","Guidance for Standards I–VII",16],
-     ["تطبيق المدونة والمعايير — دراسات حالة","Application of the Code: Level II",12]]},
+     ["مراجعة مدونة الأخلاقيات والمعايير","Code & Standards Review"],
+     ["إرشادات المعايير I–VII (تطبيق معمّق)","Guidance for Standards I–VII"],
+     ["تطبيق المدونة والمعايير — دراسات حالة","Application of the Code: Level II"]]},
    {id:"fsa",ar:"تحليل القوائم المالية",en:"Financial Statement Analysis",abbr:"FSA",wMin:10,wMax:15,r:[
-     ["الاستثمارات بين الشركات","Intercorporate Investments",9],
-     ["تعويضات الموظفين: ما بعد التوظيف والأسهم","Employee Compensation",8],
-     ["العمليات متعددة الجنسيات","Multinational Operations",9],
-     ["تحليل المؤسسات المالية","Analysis of Financial Institutions",8],
-     ["تقييم جودة التقارير المالية","Evaluating Quality of Financial Reports",8],
-     ["تكامل أساليب تحليل القوائم المالية","Integration of Financial Statement Analysis Techniques",6]]},
+     ["الاستثمارات بين الشركات","Intercorporate Investments"],
+     ["تعويضات الموظفين: ما بعد التوظيف والأسهم","Employee Compensation"],
+     ["العمليات متعددة الجنسيات","Multinational Operations"],
+     ["تحليل المؤسسات المالية","Analysis of Financial Institutions"],
+     ["تقييم جودة التقارير المالية","Evaluating Quality of Financial Reports"],
+     ["تكامل أساليب تحليل القوائم المالية","Integration of Financial Statement Analysis Techniques"]]},
    {id:"eq",ar:"استثمارات الأسهم",en:"Equity Investments",abbr:"EI",wMin:10,wMax:15,r:[
-     ["تقييم الأسهم: التطبيقات والعمليات","Valuation: Applications & Processes",5],
-     ["نموذج خصم التوزيعات","Discounted Dividend Valuation",9],
-     ["تقييم التدفقات النقدية الحرة","Free Cash Flow Valuation",11],
-     ["التقييم بالمضاعفات السوقية","Market-Based Valuation (Multiples)",9],
-     ["تقييم الدخل المتبقي","Residual Income Valuation",7],
-     ["تقييم الشركات الخاصة","Private Company Valuation",7]]},
+     ["تقييم الأسهم: التطبيقات والعمليات","Valuation: Applications & Processes"],
+     ["نموذج خصم التوزيعات","Discounted Dividend Valuation"],
+     ["تقييم التدفقات النقدية الحرة","Free Cash Flow Valuation"],
+     ["التقييم بالمضاعفات السوقية","Market-Based Valuation (Multiples)"],
+     ["تقييم الدخل المتبقي","Residual Income Valuation"],
+     ["تقييم الشركات الخاصة","Private Company Valuation"]]},
    {id:"fi",ar:"الدخل الثابت",en:"Fixed Income",abbr:"FI",wMin:10,wMax:15,r:[
-     ["هيكل الأجل وديناميكيات أسعار الفائدة","Term Structure & Rate Dynamics",9],
-     ["إطار التقييم الخالي من المراجحة","Arbitrage-Free Valuation",8],
-     ["تقييم السندات ذات الخيارات المضمّنة","Bonds with Embedded Options",11],
-     ["نماذج تحليل الائتمان","Credit Analysis Models",8],
-     ["مقايضات التخلف الائتماني (CDS)","Credit Default Swaps",6]]},
+     ["هيكل الأجل وديناميكيات أسعار الفائدة","Term Structure & Rate Dynamics"],
+     ["إطار التقييم الخالي من المراجحة","Arbitrage-Free Valuation"],
+     ["تقييم السندات ذات الخيارات المضمّنة","Bonds with Embedded Options"],
+     ["نماذج تحليل الائتمان","Credit Analysis Models"],
+     ["مقايضات التخلف الائتماني (CDS)","Credit Default Swaps"]]},
    {id:"pm",ar:"إدارة المحافظ",en:"Portfolio Management",abbr:"PM",wMin:10,wMax:15,r:[
-     ["الاقتصاد وأسواق الاستثمار","Economics & Investment Markets",6],
-     ["تحليل الإدارة النشطة للمحافظ","Active Portfolio Management",7],
-     ["صناديق المؤشرات المتداولة (ETF)","ETF Mechanics & Applications",5],
-     ["استخدام النماذج متعددة العوامل","Using Multifactor Models",7],
-     ["قياس وإدارة مخاطر السوق","Measuring & Managing Market Risk",7],
-     ["الاختبار الخلفي والمحاكاة","Backtesting & Simulation",6]]},
+     ["الاقتصاد وأسواق الاستثمار","Economics & Investment Markets"],
+     ["تحليل الإدارة النشطة للمحافظ","Active Portfolio Management"],
+     ["صناديق المؤشرات المتداولة (ETF)","ETF Mechanics & Applications"],
+     ["استخدام النماذج متعددة العوامل","Using Multifactor Models"],
+     ["قياس وإدارة مخاطر السوق","Measuring & Managing Market Risk"],
+     ["الاختبار الخلفي والمحاكاة","Backtesting & Simulation"]]},
    {id:"qm",ar:"الأساليب الكمية",en:"Quantitative Methods",abbr:"QM",wMin:5,wMax:10,r:[
-     ["أساسيات الانحدار المتعدد","Basics of Multiple Regression",4],
-     ["تقييم ملاءمة نموذج الانحدار","Evaluating Regression Fit",4],
-     ["سوء توصيف النموذج","Model Misspecification",3],
-     ["امتدادات الانحدار المتعدد","Extensions of Multiple Regression",4],
-     ["تحليل السلاسل الزمنية","Time-Series Analysis",5],
-     ["تعلّم الآلة","Machine Learning",3],
-     ["مشاريع البيانات الضخمة","Big Data Projects",3]]},
+     ["أساسيات الانحدار المتعدد","Basics of Multiple Regression"],
+     ["تقييم ملاءمة نموذج الانحدار","Evaluating Regression Fit"],
+     ["سوء توصيف النموذج","Model Misspecification"],
+     ["امتدادات الانحدار المتعدد","Extensions of Multiple Regression"],
+     ["تحليل السلاسل الزمنية","Time-Series Analysis"],
+     ["تعلّم الآلة","Machine Learning"],
+     ["مشاريع البيانات الضخمة","Big Data Projects"]]},
    {id:"eco",ar:"الاقتصاد",en:"Economics",abbr:"ECO",wMin:5,wMax:10,r:[
-     ["أسعار صرف العملات: قيمة التوازن","Currency Exchange Rates",8],
-     ["النمو الاقتصادي","Economic Growth",6]]},
+     ["أسعار صرف العملات: قيمة التوازن","Currency Exchange Rates"],
+     ["النمو الاقتصادي","Economic Growth"]]},
    {id:"ci",ar:"مُصدِرو الشركات",en:"Corporate Issuers",abbr:"CI",wMin:5,wMax:10,r:[
-     ["تحليل التوزيعات وإعادة شراء الأسهم","Dividends & Share Repurchases",7],
-     ["اعتبارات ESG في تحليل الاستثمار","ESG Considerations",4],
-     ["تكلفة رأس المال: مواضيع متقدمة","Cost of Capital: Advanced",5],
-     ["إعادة هيكلة الشركات","Corporate Restructuring",6]]},
+     ["تحليل التوزيعات وإعادة شراء الأسهم","Dividends & Share Repurchases"],
+     ["اعتبارات ESG في تحليل الاستثمار","ESG Considerations"],
+     ["تكلفة رأس المال: مواضيع متقدمة","Cost of Capital: Advanced"],
+     ["إعادة هيكلة الشركات","Corporate Restructuring"]]},
    {id:"der",ar:"المشتقات",en:"Derivatives",abbr:"DER",wMin:5,wMax:10,r:[
-     ["تسعير وتقييم الالتزامات الآجلة","Pricing Forward Commitments",12],
-     ["تقييم المطالبات الاحتمالية (الخيارات)","Valuation of Contingent Claims",13]]},
+     ["تسعير وتقييم الالتزامات الآجلة","Pricing Forward Commitments"],
+     ["تقييم المطالبات الاحتمالية (الخيارات)","Valuation of Contingent Claims"]]},
    {id:"ai",ar:"الاستثمارات البديلة",en:"Alternative Investments",abbr:"AI",wMin:5,wMax:10,r:[
-     ["السلع ومشتقات السلع","Commodities & Commodity Derivatives",6],
-     ["أنواع الاستثمار العقاري","Types of Real Estate Investment",6],
-     ["الاستثمار العقاري عبر الأوراق المتداولة","Publicly Traded Real Estate",5],
-     ["استراتيجيات صناديق التحوّط","Hedge Fund Strategies",5]]}
+     ["السلع ومشتقات السلع","Commodities & Commodity Derivatives"],
+     ["أنواع الاستثمار العقاري","Types of Real Estate Investment"],
+     ["الاستثمار العقاري عبر الأوراق المتداولة","Publicly Traded Real Estate"],
+     ["استراتيجيات صناديق التحوّط","Hedge Fund Strategies"]]}
   ]
 };
 
-/* ---------- v6 sub-object shapes (unused by the v7 UI, kept only so migrate() stays
-   byte-for-byte compatible with v1..v6 installs and nothing in storage is ever dropped) ---------- */
+/* ---------- v6 sub-object shapes (unused by the v7 UI, kept so useful reading metadata
+   survives older installs; the retired trackers are removed by the v10 cleanup) ---------- */
 function defaultSourceMap(){
   return {
     prepnuggets:"none", markVideo:"none", markNotes:"none", markFormula:"na",
@@ -222,26 +220,20 @@ function fresh(){
   const s = JSON.parse(JSON.stringify(DEFAULT));
   s.topics.forEach(t=>{
     t.weight = (t.wMin+t.wMax)/2;
-    t.r = t.r.map((x,i)=>({id:t.id+"-"+i, ar:x[0], en:x[1], hrs:x[2], status:"todo", mastery:"none", qMastery:"none", note:"", qNote:"", spent:0}));
+    t.r = t.r.map((x,i)=>({id:t.id+"-"+i, ar:x[0], en:x[1], status:"todo", mastery:"none", qMastery:"none", note:"", qNote:"", questionSessions:[]}));
   });
   s.v = 1;
   return migrate(s);
 }
 function migrate(o){
   const previousVersion = o.v||1;
-  o.v = 9;
+  o.v = 10;
   if(!o.restDays) o.restDays = {};
   if(!o.reviews) o.reviews = {};
-  if(o.activeTimer === undefined) o.activeTimer = null;
-  if(!o.practice) o.practice = {};
   if(!o.mocks) o.mocks = [];
-  if(!o.sessions) o.sessions = [];
-  if(!o.qGoal) o.qGoal = 2000;
   if(o.lastExport === undefined) o.lastExport = null;
   if(!o.celebrated) o.celebrated = {};
   if(o.planCfg === undefined) o.planCfg = null;
-  if(o.activeTimer && o.activeTimer.accum == null){ o.activeTimer.accum = 0; o.activeTimer.pausedAt = null; }
-  if(o.activeTimer && !o.activeTimer.dayKey) o.activeTimer.dayKey = dateKeyInRiyadh(new Date(o.activeTimer.start));
   o.topics.forEach(t=>{
     if(t.weight == null) t.weight = (t.wMin+t.wMax)/2;
     t.r.forEach(r=>{
@@ -251,7 +243,6 @@ function migrate(o){
       if(Array.isArray(r.questionSessions)) r.questionSessions.forEach(s=>{
         if(s && typeof s === "object" && !Array.isArray(s) && s.scope === undefined) s.scope = "";
       });
-      if(r.spent == null) r.spent = 0;
       if(r.mastery == null) r.mastery = "none"; /* self-rated understanding of the reading */
       if(r.qMastery == null) r.qMastery = "none"; /* self-rated question-solving performance */
     });
@@ -280,18 +271,16 @@ function migrate(o){
           id:"fsa-5",
           ar:"تكامل أساليب تحليل القوائم المالية",
           en:"Integration of Financial Statement Analysis Techniques",
-          hrs:6,
           status:"todo",
           mastery:"none",
-          note:"",
-          spent:0
+          note:""
         });
       }
     }
   }
   if(previousVersion<6){
-    /* v5 -> v6 (CFA Personal Coach): purely additive — nothing below removes or renames
-       any existing id, hours, note, review, mock, session, dailyLog or setting.
+    /* v5 -> v6 (CFA Personal Coach): backfill the useful reading metadata.
+       v10 below intentionally removes the retired trackers after this compatibility step.
        Curriculum framing: CFA Level II 2026 has 42 official readings; this dashboard
        tracks them as 45 study units (a few readings are split into two trackable units). */
     o.schemaVersion = 6;
@@ -306,7 +295,6 @@ function migrate(o){
         if(r.pages===undefined) r.pages = {mark:"",schweser:"",cfai:"",secretSauce:""};
         if(r.brief===undefined) r.brief = defaultBrief();
         else r.brief = Object.assign(defaultBrief(), r.brief); /* backfill any brief fields added after your first v6 run */
-        if(r.readingPractice===undefined) r.readingPractice = []; /* Reading-level question-bank entries */
         if(r.closeout===undefined) r.closeout = {status:"open", closedAt:null}; /* open|ready|closed */
       });
     });
@@ -321,19 +309,6 @@ function migrate(o){
         ml.excludedNote = "خارج منهج 2026: حذفت CFA Institute LOS E (Neural Networks, Deep Learning Nets, and Reinforcement Learning) من هذه القراءة. الجزء المتبقي فقط يدخل في التقدّم والجاهزية وخطة اليوم.";
       }
     }
-    /* legacy topic-level practice entries stay exactly as-is and keep counting in every total;
-       they are additionally indexed as read-only "legacy" rows so new reading-level stats
-       can report on them without double-counting or discarding history. */
-    if(!o.practiceLegacyIndexed){
-      const legacy=[];
-      for(const day in o.practice){
-        for(const topicId in o.practice[day]){
-          const e=o.practice[day][topicId];
-          legacy.push({day:day, topicId:topicId, a:e.a, c:e.c, legacy:true});
-        }
-      }
-      o.practiceLegacyIndexed = legacy.length; /* marker only, source of truth stays o.practice */
-    }
     if(!o.errors) o.errors = [];                 /* دفتر الأخطاء (v6, kept, not shown in v7) */
     if(!o.weaknesses) o.weaknesses = [];          /* نقاط الضعف (v6, kept, not shown in v7) */
     if(!o.closeoutCfg) o.closeoutCfg = { minQuestions:20, minAccuracy:70, maxGuessRate:35 };
@@ -344,38 +319,26 @@ function migrate(o){
     if(!o.syncConflicts) o.syncConflicts = [];
     if(o.lastLocalChangeAt===undefined) o.lastLocalChangeAt = Date.now();
   }
-  if(previousVersion<7){
-    /* v6 -> v7 (Simple CFA Study Tracker): purely additive, same rule as every migration
-       before it — nothing below removes or renames any existing field. v7 only reads the
-       old v6 reading-level question log (readingPractice[]) once to seed two new, simple
-       cumulative counters (qSolved/qCorrect) that the v7 UI edits directly. The original
-       readingPractice[] entries are left exactly as they were: still in storage, still
-       intact, just no longer shown by the simplified UI. */
-    o.schemaVersion = 7;
-    o.topics.forEach(t=>{
-      t.r.forEach(r=>{
-        if(r.qGoal===undefined) r.qGoal = null; /* optional per-reading question-count goal */
-        if(r.qSolved===undefined || r.qCorrect===undefined){
-          let a=0,c=0;
-          (r.readingPractice||[]).forEach(p=>{ a+=p.total||0; c+=p.correct||0; });
-          if(r.qSolved===undefined) r.qSolved = a;
-          if(r.qCorrect===undefined) r.qCorrect = c;
-        }
-      });
-    });
-  }
-  if(previousVersion<8){
-    /* v7 -> v8 (question practice sessions): purely additive. Existing cumulative
-       qSolved/qCorrect counters stay as the historical baseline; every new session is
-       stored separately under its reading so it can be reviewed, edited, or removed. */
-    o.schemaVersion = 8;
-  }
-  if(previousVersion<9){
-    /* v8 -> v9 (question session scope): purely additive. A session's score describes
-       only the part or question method recorded in scope; it never changes reading mastery. */
-    o.schemaVersion = 9;
-  }
-  if(o.schemaVersion===undefined || o.schemaVersion<9) o.schemaVersion = 9;
+  /* v10 cleanup: the old hour tracker and cumulative question counters are retired.
+     New questionSessions[] is the only source of question totals; the qualitative
+     reading/question ratings and notes remain separate and are intentionally kept. */
+  delete o.target;
+  delete o.buffer;
+  delete o.dailyLog;
+  delete o.activeTimer;
+  delete o.practice;
+  delete o.sessions;
+  delete o.qGoal;
+  delete o.practiceLegacyIndexed;
+  o.topics.forEach(t=>t.r.forEach(r=>{
+    delete r.hrs;
+    delete r.spent;
+    delete r.readingPractice;
+    delete r.qGoal;
+    delete r.qSolved;
+    delete r.qCorrect;
+  }));
+  o.schemaVersion = 10;
   return o;
 }
 
@@ -448,13 +411,11 @@ function questionSessionIsUsable(s){
 }
 function questionSessionAccuracy(s){ return s.total ? Math.round(s.correct/s.total*100) : 0; }
 function questionSessionStats(r){
-  const baseSolved=Number.isFinite(Number(r.qSolved)) ? Math.max(0,Number(r.qSolved)) : 0;
-  const baseCorrect=Number.isFinite(Number(r.qCorrect)) ? Math.max(0,Math.min(baseSolved,Number(r.qCorrect))) : 0;
   const sessions=(Array.isArray(r.questionSessions)?r.questionSessions:[])
     .filter(questionSessionIsUsable)
     .slice()
     .sort((a,b)=>String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id)));
-  let solved=baseSolved, correct=baseCorrect;
+  let solved=0, correct=0;
   sessions.forEach(s=>{ solved+=s.total; correct+=s.correct; });
   return {
     sessions,
@@ -529,25 +490,6 @@ function renderSummary(){
   $("#questionSessionsVal").textContent = q.sessions;
   $("#questionAccuracyVal").textContent = q.pct===null ? "—" : q.pct;
   $("#questionAccuracyUnit").hidden = q.pct===null;
-}
-
-/* ---------- finalize any timer left dangling from before the manual timer was removed ----------
-   v7.2 and earlier had a start/stop study timer that wrote to dailyLog/sessions/r.spent.
-   That UI is gone, so on load we just settle whatever was mid-flight into those same
-   fields (never shown anymore, but nothing already recorded there is discarded) and clear it. */
-function finalizeDanglingTimer(){
-  const a=S.activeTimer; if(!a) return;
-  const base=a.accum||0;
-  const secs=Math.min(a.pausedAt ? base : base+Math.floor((Date.now()-a.start)/1000), 4*3600);
-  if(secs>=30){
-    const hrs=secs/3600;
-    const dk=a.dayKey||todayKey();
-    S.dailyLog[dk]=(S.dailyLog[dk]||0)+hrs;
-    const f=a.readingId?findReading(a.readingId):null;
-    if(f) f.r.spent=(f.r.spent||0)+hrs;
-    S.sessions.push({d:dk, m:Math.round(secs/60), id:a.readingId||null, h:null});
-  }
-  S.activeTimer=null;
 }
 
 /* ---------- UI-only prefs: which topic accordions are open ----------
@@ -785,12 +727,6 @@ async function copyText(text){
 }
 function rateText(v){ return RATE_LABEL[v] || "لم أقيّمها بعد"; }
 function noteText(v){ const s=(v||"").trim(); return s || "(لا توجد ملاحظات)"; }
-function hoursText(n){
-  const v=fmt(n);
-  if(v==="1") return "ساعة واحدة";
-  if(v==="2") return "ساعتان";
-  return v+((n>=3 && n<=10) ? " ساعات" : " ساعة");
-}
 const COPY_DIVIDER = "────────────────";
 function examContextLines(){
   const R=readingsTotals();
@@ -814,7 +750,6 @@ function readingDetailLines(r, prefix){
   L.push((prefix||"")+"القراءة"+(r.readingNo==null?"":" رقم "+r.readingNo)+": "+title);
   if(r.ar && r.en) L.push("الاسم بالعربي: "+r.ar);
   L.push("الحالة: "+(STAT[r.status]||r.status));
-  if(r.hrs) L.push("الوقت التقديري: "+hoursText(r.hrs));
   L.push("");
   L.push("تقييم فهمي للقراءة: "+rateText(r.mastery));
   L.push("ملاحظات القراءة:");
@@ -825,7 +760,7 @@ function readingDetailLines(r, prefix){
   L.push(noteText(r.qNote));
   if(q.solved || q.sessionCount){
     L.push("");
-    L.push("إجمالي الأسئلة المحلولة: "+q.solved+" — صحيحة: "+q.correct+" — خطأ: "+q.wrong+" ("+q.accuracy+"٪)"+(r.qGoal?" — الهدف: "+r.qGoal:""));
+    L.push("إجمالي أسئلة الجلسات: "+q.solved+" — صحيحة: "+q.correct+" — خطأ: "+q.wrong+" ("+q.accuracy+"٪)");
   }
   if(q.sessionCount){
     L.push("تنبيه: دقة كل جلسة تخص الجزء أو طريقة الأسئلة المسجّلة فيها فقط، ولا تعني إتقان القراءة كاملة.");
@@ -917,8 +852,8 @@ function overviewLines(){
   L.push("حالة القراءات: مكتملة "+(c.done||0)+" — أذاكرها الآن "+(c.doing||0)+" — لم أبدأ "+(c.todo||0));
   L.push("قراءات قيّمتها ضعيفة (تحتاج مراجعة): "+weak.length);
   L.push("جلسات الأسئلة المسجّلة: "+q.sessions);
-  if(q.solved) L.push("إجمالي الأسئلة المحلولة: "+q.solved+" — صحيحة: "+q.correct+" ("+q.pct+"٪)");
-  else L.push("إجمالي الأسئلة المحلولة: لم أسجّل أي أسئلة بعد");
+  if(q.solved) L.push("إجمالي أسئلة الجلسات: "+q.solved+" — صحيحة: "+q.correct+" ("+q.pct+"٪)");
+  else L.push("إجمالي أسئلة الجلسات: لم أسجّل أي أسئلة بعد");
   return L;
 }
 function topicsTableLines(){
@@ -1149,11 +1084,10 @@ function renderReadings(){
     addBtn.textContent="+ إضافة قراءة جديدة";
     addBtn.onclick=()=>{
       t.r.push({
-        id:t.id+"-new-"+Date.now(), ar:"", en:"قراءة جديدة", hrs:null, status:"todo", mastery:"none", qMastery:"none",
-        note:"", qNote:"", spent:0, topicId:t.id, readingNo:null, excludedFraction:0, excludedNote:"",
+        id:t.id+"-new-"+Date.now(), ar:"", en:"قراءة جديدة", status:"todo", mastery:"none", qMastery:"none",
+        note:"", qNote:"", topicId:t.id, readingNo:null, excludedFraction:0, excludedNote:"",
         stages:defaultStages(), sourceMap:defaultSourceMap(), pages:{mark:"",schweser:"",cfai:"",secretSauce:""},
-        brief:defaultBrief(), readingPractice:[], closeout:{status:"open",closedAt:null},
-        qGoal:null, qSolved:0, qCorrect:0, questionSessions:[]
+        brief:defaultBrief(), closeout:{status:"open",closedAt:null}, questionSessions:[]
       });
       openTopics.add(t.id); saveUiPrefs();
       save(); renderReadings(); renderSummary();
@@ -1293,7 +1227,6 @@ $("#importFile").onchange=async e=>{
   } else {
     S = fresh();
   }
-  finalizeDanglingTimer();
   loadUiPrefs();
   renderAll();
   const persisted=await persistState(S,false);
